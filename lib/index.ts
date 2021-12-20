@@ -2,6 +2,26 @@ import debug from 'debug';
 import * as grpc from '@grpc/grpc-js';
 import * as protoLoader from '@grpc/proto-loader';
 import { Buffer } from 'buffer';
+const encode = require('@onflow/encode');
+import { ec as EC } from 'elliptic';
+import { SHA3 } from 'sha3';
+const ec: EC = new EC('p256');
+
+const produceSignature = (privateKey: string, msg: Buffer): string => {
+  const key = ec.keyFromPrivate(Buffer.from(privateKey, 'hex'));
+  const sig = key.sign(sha3_256(msg));
+  const n = 32;
+  const r = sig.r.toArrayLike(Buffer, 'be', n);
+  const s = sig.s.toArrayLike(Buffer, 'be', n);
+  return Buffer.concat([r, s]).toString('hex');
+};
+
+// eslint-disable-next-line camelcase
+const sha3_256 = (msg: Buffer): string => {
+  const sha = new SHA3(256);
+  sha.update(msg);
+  return sha.digest().toString('hex');
+};
 
 // eslint-disable-next-line no-unused-vars
 export enum FlowNetwork {
@@ -58,15 +78,15 @@ enum FlowWorkerStatus {
 export interface FlowKey {
   keyID: number;
   private: string;
-  public?: string;
+  public: string;
 }
 
 export interface Account {
+  address: Buffer;
+  balance: number;
+  code: Buffer;
   keys: Array<AccountKey>;
   contracts: Object;
-  address: Buffer;
-  balance: string;
-  code: Buffer;
 }
 
 export interface Block {
@@ -114,13 +134,112 @@ export interface AccountKey {
   revoked: Boolean;
 }
 
+export interface Transaction {
+  script: Buffer;
+  arguments: Array<Buffer>;
+  reference_block_id: Buffer;
+  gas_limit: number;
+  proposal_key: TransactionProposalKey;
+  payer: Buffer;
+  authorizers: Array<Buffer>;
+  payload_signatures: Array<TransactionSignature>;
+  envelope_signatures: Array<TransactionSignature>;
+}
+
+export interface TransactionProposalKey {
+  address: Buffer;
+  key_id: number;
+  sequence_number: number;
+}
+
+export interface TransactionSignature {
+  address: Buffer;
+  key_id: number;
+  signature: Buffer;
+}
+
+export enum TransactionStatus {
+  // eslint-disable-next-line no-unused-vars
+  UNKNOWN,
+  // eslint-disable-next-line no-unused-vars
+  PENDING,
+  // eslint-disable-next-line no-unused-vars
+  FINALIZED,
+  // eslint-disable-next-line no-unused-vars
+  EXECUTED,
+  // eslint-disable-next-line no-unused-vars
+  SEALED,
+  // eslint-disable-next-line no-unused-vars
+  EXPIRED,
+}
+
+export interface Sign {
+  address: string,
+  key_id: number,
+  private_key: string,
+}
+
+interface Sig {
+  address: string;
+  keyId: number;
+  sig: string;
+}
+
 interface FlowWork {
   type: FlowWorkType;
-  script?: string;
-  arguments?: Array<any>;
-  proposer?: FlowKey;
-  callback?: Function;
+  arguments: Array<any>;
+  callback: Function;
+  script?: Buffer;
+  proposer?: Buffer;
+  authorizers?: Array<Buffer>,
+  payer?: Buffer;
+  payload_signatures?: Array<Sign>,
 }
+
+const signTransaction = (transaction: Transaction, payloadSignatures: Sign[], envelopeSignatures: Sign[]): Transaction => {
+  const debugLog = debug(`signTransaction`);
+
+  const tr = transaction;
+  const payloadSigs: Sig[] = [];
+  payloadSignatures.forEach((ps) => {
+    const payloadMsg = encode.encodeTransactionPayload({
+      script: tr.script.toString('utf-8'),
+      arguments: tr.arguments,
+      refBlock: tr.reference_block_id.toString('hex'),
+      gasLimit: tr.gas_limit,
+      proposalKey: {
+        address: tr.proposal_key.address.toString('hex'),
+        keyId: tr.proposal_key.key_id,
+        sequenceNum: tr.proposal_key.sequence_number,
+      },
+      payer: tr.payer.toString('hex'),
+      authorizers: tr.authorizers.map((x) => x.toString('hex')),
+    });
+    const thisSig = produceSignature(ps.private_key, payloadMsg);
+    tr.payload_signatures.push({ address: Buffer.from(ps.address, 'hex'), key_id: ps.key_id, signature: Buffer.from(thisSig, 'hex') });
+    payloadSigs.push({ address: ps.address, keyId: ps.key_id, sig: thisSig });
+  });
+  envelopeSignatures.forEach((es) => {
+    const envelopeMsg = encode.encodeTransactionEnvelope({
+      script: tr.script.toString('utf-8'),
+      arguments: tr.arguments,
+      refBlock: tr.reference_block_id.toString('hex'),
+      gasLimit: tr.gas_limit,
+      proposalKey: {
+        address: tr.proposal_key.address.toString('hex'),
+        keyId: tr.proposal_key.key_id,
+        sequenceNum: tr.proposal_key.sequence_number,
+      },
+      payer: tr.payer.toString('hex'),
+      payloadSigs: payloadSigs,
+      authorizers: tr.authorizers.map((x) => x.toString('hex')),
+    });
+    const thisSig = produceSignature(es.private_key, envelopeMsg);
+    tr.envelope_signatures.push({ address: Buffer.from(es.address, 'hex'), key_id: es.key_id, signature: Buffer.from(thisSig, 'hex') });
+  });
+  debugLog(tr);
+  return tr;
+};
 
 export class Flow {
   private serviceAccountAddress: string;
@@ -132,6 +251,7 @@ export class Flow {
   private error: any;
   private shutdown: Boolean = false;
   private tickTimeout: number = 20;
+  private processing: Boolean = false;
 
   constructor(network: FlowNetwork | string, serviceAccountAddress: string, privateKeys: Array<FlowKey>, tick?: number) {
     tick ? this.tickTimeout = tick : 20;
@@ -163,7 +283,7 @@ export class Flow {
     const processingConnections: Promise<any>[] = [];
     this.privateKeys.forEach((k) => {
       processingConnections.push(new Promise(async (p) => {
-        const worker = new FlowWorker(k.private, k.keyID, this.network);
+        const worker = new FlowWorker(k.private, k.public, k.keyID, this.network);
         await worker.connect();
         this.workers.push(worker);
         p(true);
@@ -175,19 +295,23 @@ export class Flow {
     this.tick();
   }
   private async tick() {
-    const beginningCount = this.work.length;
-    if (beginningCount > 0) {
-      this.workers.forEach((w) => {
-        if (this.work.length > 0 && w.status == FlowWorkerStatus.IDLE) {
-          w.process(this.work.splice(0, 1)[0]);
+    if (!this.processing) {
+      this.processing = true;
+      const beginningCount = this.work.length;
+      if (beginningCount > 0) {
+        this.workers.forEach((w) => {
+          if (this.work.length > 0 && w.status == FlowWorkerStatus.IDLE) {
+            w.process(this.work.splice(0, 1)[0]);
+          }
+        });
+        if (this.work.length > 0) {
+          this.dbg('All workers are busy, work remaining:', this.work.length);
         }
-      });
-      if (this.work.length > 0) {
-        this.dbg('All workers are busy, work remaining:', this.work.length);
+        if (this.shutdown) this.dbg('Cleaning up for shutdown');
       }
-      if (this.shutdown) this.dbg('Cleaning up for shutdown');
+      if (this.error) console.log('Error:', this.error);
+      this.processing = false;
     }
-    if (this.error) console.log('Error:', this.error);
     if (!this.shutdown || this.work.length > 0) setTimeout(() => this.tick(), this.tickTimeout);
   }
   stop() {
@@ -223,7 +347,7 @@ export class Flow {
       };
       this.work.push({
         type: FlowWorkType.SCRIPT,
-        script: script,
+        script: Buffer.from(script, 'utf-8'),
         arguments: arg,
         callback: cb,
       });
@@ -238,25 +362,52 @@ export class Flow {
       };
       this.work.push({
         type: FlowWorkType.TRANSACTION,
-        script: script,
+        script: Buffer.from(script, 'utf-8'),
         arguments: arg,
         callback: cb,
       });
     });
   }
-  async create_account(newAccountKeys: Array<FlowKey>): Promise<any> {
+  async create_account(newAccountKeys?: Array<FlowKey>): Promise<any> {
     return new Promise((p) => {
       const cb = (err: Error, res: any) => {
         if (err) p(err);
-        this.dbg('execute_transaction response is:', res);
         p(res);
       };
-      // prep out transaction here
-      const createAcct = '';
+
+      const createAccountTemplate = `
+        transaction(publicKeys: [String], contracts: {String: String}) {
+            prepare(signer: AuthAccount) {
+                let acct = AuthAccount(payer: signer)
+        
+                for key in publicKeys {
+                    acct.addPublicKey(key.decodeHex())
+                }
+        
+                for contract in contracts.keys {
+                    acct.contracts.add(name: contract, code: contracts[contract]!.decodeHex())
+                }
+            }
+        }`;
+
+      const keys: string[] = [];
+
+      newAccountKeys ? newAccountKeys.map((x) => {
+        if (x.public) keys.push(x.public);
+      }) : this.privateKeys.map((x) => {
+        if (x.public) keys.push(x.public);
+      });
+
+      const svcBuf = Buffer.from(this.serviceAccountAddress, 'hex');
+
       this.work.push({
         type: FlowWorkType.TRANSACTION,
-        script: createAcct,
-        arguments: [],
+        script: Buffer.from(createAccountTemplate, 'utf-8'),
+        arguments: [keys],
+        proposer: svcBuf,
+        payer: svcBuf,
+        authorizers: [svcBuf],
+        payload_signatures: [],
         callback: cb,
       });
     });
@@ -292,17 +443,19 @@ export class Flow {
 }
 
 class FlowWorker {
-  key: string;
+  privKey: string;
+  pubKey: string;
   id: number;
   dbg: debug.IDebugger;
   private network: string;
   private access: any;
   private client: any;
   public status: number;
-  constructor(key: string, id: number, network: string) {
+  constructor(privKey: string, pubKey: string, id: number, network: string) {
     const debugLog: debug.IDebugger = debug(`FlowWorker::${id}::Constructor`);
     this.dbg = debug(`FlowWorker::${id}`);
-    this.key = key;
+    this.privKey = privKey;
+    this.pubKey = pubKey;
     this.id = id;
     this.network = network;
     this.status = FlowWorkerStatus.CONNECTING;
@@ -340,53 +493,101 @@ class FlowWorker {
       // process the work
       switch (work.type) {
         case FlowWorkType.GetAccountAtLatestBlock:
-          if (work.arguments) {
+          if (work.arguments.length == 1) {
             const bufArg = Buffer.from(work.arguments[0].toString().replace(/\b0x/g, ''), 'hex');
             this.client.getAccountAtLatestBlock({ address: bufArg }, (err: any, res: any) => {
-              if (work.callback) work.callback(err, res);
+              work.callback(err, res);
               this.status = FlowWorkerStatus.IDLE;
               p();
             });
           } else {
-            if (work.callback) work.callback(Error('Account argument required. Proper usage: Flow.get_account(\'0xf8d6e0586b0a20c7\')'));
+            work.callback(Error('incorrect number of arguments'));
             this.status = FlowWorkerStatus.IDLE;
             p();
           }
           break;
 
         case FlowWorkType.GetAccountAtBlockHeight:
-          if (work.arguments) {
+          if (work.arguments.length == 2) {
             const bufArg = Buffer.from(work.arguments[0].toString().replace(/\b0x/g, ''), 'hex');
             this.client.getAccountAtBlockHeight({ address: bufArg, block_height: parseInt(work.arguments[1]) }, (err: any, res: any) => {
-              if (work.callback) work.callback(err, res);
+              work.callback(err, res);
               this.status = FlowWorkerStatus.IDLE;
               p();
             });
           } else {
-            if (work.callback) work.callback(Error('Account argument required. Proper usage: Flow.get_account(\'0xf8d6e0586b0a20c7\')'));
+            work.callback(Error('incorrect number of arguments'));
             this.status = FlowWorkerStatus.IDLE;
             p();
           }
           break;
 
         case FlowWorkType.GetLatestBlock:
-          if (work.arguments) {
+          if (work.arguments.length == 1) {
             if (typeof work.arguments[0] !== 'boolean') return Promise.reject(Error(`arg 0 must be a bool: GetLatestBlock, found ${work.arguments[0]}`));
             this.client.getLatestBlock({ is_sealed: work.arguments[0] }, (err: any, res: any) => {
-              if (work.callback) work.callback(err, res);
+              work.callback(err, res);
               this.status = FlowWorkerStatus.IDLE;
               p();
             });
           } else {
-            if (work.callback) work.callback(Error('is_sealed was not provided'));
+            work.callback(Error('incorrect number of arguments'));
             this.status = FlowWorkerStatus.IDLE;
             p();
           }
           break;
 
+        case FlowWorkType.TRANSACTION:
+          if (!work.proposer) return Promise.reject(Error('Transaction must have a proposer'));
+          if (!work.payer) return Promise.reject(Error('Transaction must have a payer'));
+          this.client.getLatestBlock({ is_sealed: work.arguments[0] }, (err: any, block: any) => {
+            if (err) p(err);
+            this.client.getAccountAtLatestBlock({ address: work.proposer }, (err: any, proposer: any) => {
+              if (err) p(err);
+              this.client.getAccountAtLatestBlock({ address: work.payer }, (err: any, payer: any) => {
+                if (err) p(err);
+                // args
+                // build
+                const mapR = proposer['account'].keys.map((x: AccountKey) => {
+                  if (x.public_key.toString('hex') == this.pubKey.replace(/\b0x/g, '')) return [x.id, x.sequence_number];
+                })[0];
+                const propKey: TransactionProposalKey = {
+                  address: proposer['account'].address,
+                  key_id: mapR[0],
+                  sequence_number: mapR[1],
+                };
+                let transaction: Transaction = {
+                  script: work.script ? work.script : Buffer.from('', 'utf-8'),
+                  arguments: [],
+                  reference_block_id: block['block'].id,
+                  gas_limit: 9999,
+                  proposal_key: propKey,
+                  payer: payer['account'].address,
+                  authorizers: <Array<Buffer>>work.authorizers,
+                  payload_signatures: [],
+                  envelope_signatures: [],
+                };
+                // sign
+                const sig: Sign = {
+                  address: payer['account'].address.toString('hex'),
+                  key_id: mapR[0],
+                  private_key: this.privKey,
+                };
+                transaction = signTransaction(transaction, [], [sig]);
+                // send
+                this.client.sendTransaction({ transaction: transaction }, (err: any, trans: any) => {
+                  work.callback(err, trans);
+                  this.status = FlowWorkerStatus.IDLE;
+                  p();
+                });
+              });
+            });
+          });
+          break;
+
         default:
           this.dbg(FlowWorkType[work.type], 'is not implemented.');
-          if (work.callback) work.callback(Error(`${FlowWorkType[work.type]} is not implemented`));
+          work.callback(Error(`${FlowWorkType[work.type]} is not implemented`));
           this.status = FlowWorkerStatus.IDLE;
           p();
           break;

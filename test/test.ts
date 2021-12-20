@@ -5,8 +5,9 @@ const debugLog = debug('Test');
 const key0: FlowKey = {
   keyID: 0,
   private: '324db577a741a9b7a2eb6cef4e37e72ff01a554bdbe4bd77ef9afe1cb00d3cec',
+  public: 'ef100c2a8d04de602cd59897e08001cf57ca153cb6f9083918cde1ec7de77418a2c236f7899b3f786d08a1b4592735e3a7461c3e933f420cf9babe350abe0c5a',
 };
-const flow = new Flow(FlowNetwork.EMULATOR, '0xf8d6e0586b0a20c7', [key0]);
+const flow = new Flow(FlowNetwork.EMULATOR, '0xf8d6e0586b0a20c7', [key0], 5);
 
 export const runTests = async () => {
   debugLog('Beginning Tests');
@@ -14,6 +15,7 @@ export const runTests = async () => {
   await getAccountTest();
   await getAccountStressTest();
   await getBlockTest();
+  await createAccountTest();
   flow.stop();
 };
 
@@ -101,6 +103,23 @@ export const getBlockTest = async (): Promise<Boolean | Error> => {
       if (latestBlock instanceof Error) return Promise.reject(latestBlock);
       dbg('Latest block:', latestBlock.id.toString('hex'));
       dbg('Block height:', latestBlock.height);
+      dbg('Test Successful');
+      p(true);
+    } catch (error) {
+      dbg('Test failed');
+      p(Error(JSON.stringify(error)));
+    }
+  });
+};
+
+export const createAccountTest = async (): Promise<Boolean | Error> => {
+  return await new Promise(async (p) => {
+    const dbg = debug('Test flow.create_account');
+    dbg('Beginning Test');
+    try {
+      const newAccount = await flow.create_account();
+      if (newAccount instanceof Error) return Promise.reject(newAccount);
+      dbg(newAccount);
       dbg('Test Successful');
       p(true);
     } catch (error) {
