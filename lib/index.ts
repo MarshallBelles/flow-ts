@@ -2,13 +2,103 @@ import debug from 'debug';
 import * as grpc from '@grpc/grpc-js';
 import * as protoLoader from '@grpc/proto-loader';
 import { Buffer } from 'buffer';
-const encode = require('@onflow/encode');
 import { ec as EC } from 'elliptic';
-import { SHA3 } from 'sha3';
 const ec: EC = new EC('p256');
+import { SHA3 } from 'sha3';
+import { encode } from '@onflow/rlp';
 
-const produceSignature = (privateKey: string, msg: Buffer): string => {
-  const key = ec.keyFromPrivate(Buffer.from(privateKey, 'hex'));
+const encodeTransactionPayload = (tx: any) => prependTransactionDomainTag(rlpEncode(preparePayload(tx)));
+const encodeTransactionEnvelope = (tx: any) => prependTransactionDomainTag(rlpEncode(prepareEnvelope(tx)));
+
+const rightPaddedHexBuffer = (value: any, pad: any) =>
+  Buffer.from(value.padEnd(pad * 2, 0), 'hex');
+
+const leftPaddedHexBuffer = (value: any, pad: any) =>
+  Buffer.from(value.padStart(pad * 2, 0), 'hex');
+
+const TRANSACTION_DOMAIN_TAG = rightPaddedHexBuffer(Buffer.from('FLOW-V0.0-transaction').toString('hex'), 32).toString('hex');
+const prependTransactionDomainTag = (tx: any) => TRANSACTION_DOMAIN_TAG + tx;
+
+const addressBuffer = (addr: any) => leftPaddedHexBuffer(addr, 8);
+
+const blockBuffer = (block: any) => leftPaddedHexBuffer(block, 32);
+
+const argumentToString = (arg: any) => Buffer.from(JSON.stringify(arg), 'utf8');
+
+const scriptBuffer = (script: any) => Buffer.from(script, 'utf8');
+const signatureBuffer = (signature: any) => Buffer.from(signature, 'hex');
+
+const rlpEncode = (v: any) => {
+  return encode(v).toString('hex');
+};
+
+// eslint-disable-next-line camelcase
+const sha3_256 = (msg: any) => {
+  const sha = new SHA3(256);
+  sha.update(Buffer.from(msg, 'hex'));
+  return sha.digest().toString('hex');
+};
+
+const preparePayload = (tx: any) => {
+  return [
+    scriptBuffer(tx.cadence),
+    tx.arguments.map(argumentToString),
+    blockBuffer(tx.refBlock),
+    tx.computeLimit,
+    addressBuffer(tx.proposalKey.address),
+    tx.proposalKey.keyId,
+    tx.proposalKey.sequenceNum,
+    addressBuffer(tx.payer),
+    tx.authorizers.map(addressBuffer),
+  ];
+};
+
+const prepareEnvelope = (tx: any) => {
+  return [preparePayload(tx), preparePayloadSignatures(tx)];
+};
+
+const preparePayloadSignatures = (tx: any) => {
+  const signers = collectSigners(tx);
+
+  return tx.payloadSigs.map((sig: any) => {
+    return {
+      signerIndex: signers.get(sig.address),
+      keyId: sig.keyId,
+      sig: sig.sig,
+    };
+  }).sort((a: any, b: any) => {
+    if (a.signerIndex > b.signerIndex) return 1;
+    if (a.signerIndex < b.signerIndex) return -1;
+
+    if (a.keyId > b.keyId) return 1;
+    if (a.keyId < b.keyId) return -1;
+  }).map((sig: any) => {
+    return [sig.signerIndex, sig.keyId, signatureBuffer(sig.sig)];
+  });
+};
+
+const collectSigners = (tx: any) => {
+  const signers = new Map();
+  let i = 0;
+
+  const addSigner = (addr: any) => {
+    if (!signers.has(addr)) {
+      signers.set(addr, i);
+      i++;
+    }
+  };
+
+  addSigner(tx.proposalKey.address);
+  addSigner(tx.payer);
+  tx.authorizers.forEach(addSigner);
+
+  return signers;
+};
+
+const produceSignature = (privateKey: string, msg: string): string => {
+  const debugLog = debug(`produceSignature`);
+  debugLog(msg);
+  const key = ec.keyFromPrivate(privateKey);
   const sig = key.sign(sha3_256(msg));
   const n = 32;
   const r = sig.r.toArrayLike(Buffer, 'be', n);
@@ -16,12 +106,6 @@ const produceSignature = (privateKey: string, msg: Buffer): string => {
   return Buffer.concat([r, s]).toString('hex');
 };
 
-// eslint-disable-next-line camelcase
-const sha3_256 = (msg: Buffer): string => {
-  const sha = new SHA3(256);
-  sha.update(msg);
-  return sha.digest().toString('hex');
-};
 
 // eslint-disable-next-line no-unused-vars
 export enum FlowNetwork {
@@ -183,6 +267,7 @@ interface Sig {
   address: string;
   keyId: number;
   sig: string;
+  signerIndex?: number;
 }
 
 interface FlowWork {
@@ -197,12 +282,10 @@ interface FlowWork {
 }
 
 const signTransaction = (transaction: Transaction, payloadSignatures: Sign[], envelopeSignatures: Sign[]): Transaction => {
-  const debugLog = debug(`signTransaction`);
-
   const tr = transaction;
   const payloadSigs: Sig[] = [];
   payloadSignatures.forEach((ps) => {
-    const payloadMsg = encode.encodeTransactionPayload({
+    const payloadMsg = encodeTransactionPayload({
       script: tr.script.toString('utf-8'),
       arguments: tr.arguments,
       refBlock: tr.reference_block_id.toString('hex'),
@@ -220,7 +303,7 @@ const signTransaction = (transaction: Transaction, payloadSignatures: Sign[], en
     payloadSigs.push({ address: ps.address, keyId: ps.key_id, sig: thisSig });
   });
   envelopeSignatures.forEach((es) => {
-    const envelopeMsg = encode.encodeTransactionEnvelope({
+    const envelopeMsg = encodeTransactionEnvelope({
       script: tr.script.toString('utf-8'),
       arguments: tr.arguments,
       refBlock: tr.reference_block_id.toString('hex'),
@@ -237,7 +320,6 @@ const signTransaction = (transaction: Transaction, payloadSignatures: Sign[], en
     const thisSig = produceSignature(es.private_key, envelopeMsg);
     tr.envelope_signatures.push({ address: Buffer.from(es.address, 'hex'), key_id: es.key_id, signature: Buffer.from(thisSig, 'hex') });
   });
-  debugLog(tr);
   return tr;
 };
 

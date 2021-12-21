@@ -32,11 +32,11 @@
   "dependencies": {
     "@grpc/grpc-js": "^1.4.4",
     "@grpc/proto-loader": "^0.6.7",
-    "@onflow/encode": "0.0.8",
+    "@onflow/encode": "^0.0.8",
+    "@onflow/rlp": "^0.0.3",
     "@onflow/sdk": "0.0.55",
     "debug": "^4.3.3",
     "elliptic": "^6.5.4",
-    "grpc": "^1.24.11",
     "protobufjs": "^6.11.2",
     "sha3": "^2.1.4"
   }

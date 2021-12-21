@@ -4,8 +4,8 @@ const debugLog = debug('Test');
 
 const key0: FlowKey = {
   keyID: 0,
-  private: '324db577a741a9b7a2eb6cef4e37e72ff01a554bdbe4bd77ef9afe1cb00d3cec',
-  public: 'ef100c2a8d04de602cd59897e08001cf57ca153cb6f9083918cde1ec7de77418a2c236f7899b3f786d08a1b4592735e3a7461c3e933f420cf9babe350abe0c5a',
+  private: 'b456bc1273380930d7839559c8026d3ba8e6418b9d040bd7021f1eb8d67bcf75',
+  public: 'a6a1f28c43c89e8d04643378c93da88b52bf09c862d30a957ee403f1e7d3a6ab3723427c2bae6d13ec019e9ef892f0130caab47cae0da6b8da68f98be95d47fe',
 };
 const flow = new Flow(FlowNetwork.EMULATOR, '0xf8d6e0586b0a20c7', [key0], 5);
 
