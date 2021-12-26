@@ -3,12 +3,11 @@ import * as grpc from '@grpc/grpc-js';
 import * as protoLoader from '@grpc/proto-loader';
 import { Buffer } from 'buffer';
 import { ec as EC } from 'elliptic';
-const ec: EC = new EC('p256');
 import { SHA3 } from 'sha3';
 import { encode } from '@onflow/rlp';
 
-const encodeTransactionPayload = (tx: any) => prependTransactionDomainTag(rlpEncode(preparePayload(tx)));
-const encodeTransactionEnvelope = (tx: any) => prependTransactionDomainTag(rlpEncode(prepareEnvelope(tx)));
+const encodeTransactionPayload = (tx: any): string => prependTransactionDomainTag(rlpEncode(preparePayload(tx)));
+const encodeTransactionEnvelope = (tx: any): string => prependTransactionDomainTag(rlpEncode(prepareEnvelope(tx)));
 
 const rightPaddedHexBuffer = (value: any, pad: any) =>
   Buffer.from(value.padEnd(pad * 2, 0), 'hex');
@@ -16,8 +15,8 @@ const rightPaddedHexBuffer = (value: any, pad: any) =>
 const leftPaddedHexBuffer = (value: any, pad: any) =>
   Buffer.from(value.padStart(pad * 2, 0), 'hex');
 
-const TRANSACTION_DOMAIN_TAG = rightPaddedHexBuffer(Buffer.from('FLOW-V0.0-transaction').toString('hex'), 32).toString('hex');
-const prependTransactionDomainTag = (tx: any) => TRANSACTION_DOMAIN_TAG + tx;
+const TRANSACTION_DOMAIN_TAG = rightPaddedHexBuffer(Buffer.from('FLOW-V0.0-transaction', 'utf-8').toString('hex'), 32).toString('hex');
+const prependTransactionDomainTag = (tx: string) => TRANSACTION_DOMAIN_TAG + tx;
 
 const addressBuffer = (addr: any) => leftPaddedHexBuffer(addr, 8);
 
@@ -28,23 +27,93 @@ const argumentToString = (arg: any) => Buffer.from(JSON.stringify(arg), 'utf8');
 const scriptBuffer = (script: any) => Buffer.from(script, 'utf8');
 const signatureBuffer = (signature: any) => Buffer.from(signature, 'hex');
 
-const rlpEncode = (v: any) => {
+const rlpEncode = (v: any): string => {
   return encode(v).toString('hex');
 };
 
-// eslint-disable-next-line camelcase
-const sha3_256 = (msg: any) => {
-  const sha = new SHA3(256);
-  sha.update(Buffer.from(msg, 'hex'));
-  return sha.digest().toString('hex');
+const argParse = (arg: any): Object => {
+  switch (typeof arg) {
+    case 'string':
+      // handle string
+      return {
+        type: 'String',
+        value: arg,
+      };
+    case 'boolean':
+      // handle boolean
+      return {
+        type: 'Bool',
+        value: arg,
+      };
+    case 'bigint':
+      // handle bigint
+      return {
+        type: 'Int64',
+        value: arg,
+      };
+    case 'number':
+      // handle number
+      if (Number.isInteger(arg)) {
+        return {
+          type: 'Int',
+          value: arg,
+        };
+      } else {
+        return {
+          type: 'Fix64',
+          value: arg,
+        };
+      }
+
+    default:
+      // argument is not supported, convert to string
+      return {
+        type: 'String',
+        value: arg.toString(),
+      };
+  }
+};
+
+const argBuilder = (args: any[]): Buffer[] => {
+  const bufs: Array<Buffer> = [];
+  args.forEach((a) => {
+    // handle map<any, any>
+    if (a instanceof Map) {
+      const mapEntries: any[] = [];
+      a.forEach((v, k) => {
+        mapEntries.push({
+          key: argParse(k),
+          value: argParse(v),
+        });
+      });
+      bufs.push(Buffer.from(JSON.stringify({
+        type: 'Dictionary',
+        value: mapEntries,
+      }), 'utf-8'));
+      // assume its string : string
+    } else if (Array.isArray(a)) {
+      const arrEntries: any[] = [];
+      a.forEach((e) => {
+        arrEntries.push(argParse(e));
+      });
+      bufs.push(Buffer.from(JSON.stringify({
+        type: 'Array',
+        value: arrEntries,
+      }), 'utf-8'));
+      // handle array
+    } else {
+      bufs.push(Buffer.from(JSON.stringify(argParse(a))));
+    }
+  });
+  return bufs;
 };
 
 const preparePayload = (tx: any) => {
   return [
-    scriptBuffer(tx.cadence),
+    scriptBuffer(tx.script),
     tx.arguments.map(argumentToString),
     blockBuffer(tx.refBlock),
-    tx.computeLimit,
+    tx.gasLimit,
     addressBuffer(tx.proposalKey.address),
     tx.proposalKey.keyId,
     tx.proposalKey.sequenceNum,
@@ -98,8 +167,12 @@ const collectSigners = (tx: any) => {
 const produceSignature = (privateKey: string, msg: string): string => {
   const debugLog = debug(`produceSignature`);
   debugLog(msg);
-  const key = ec.keyFromPrivate(privateKey);
-  const sig = key.sign(sha3_256(msg));
+  const ec = new EC('p256');
+  const key = ec.keyFromPrivate(Buffer.from(privateKey, 'hex'));
+  const sha = new SHA3(256);
+  sha.update(Buffer.from(msg, 'hex'));
+  const digest = sha.digest();
+  const sig = key.sign(digest);
   const n = 32;
   const r = sig.r.toArrayLike(Buffer, 'be', n);
   const s = sig.s.toArrayLike(Buffer, 'be', n);
@@ -424,8 +497,7 @@ export class Flow {
     return new Promise((p) => {
       const cb = (err: Error, res: any) => {
         if (err) p(err);
-        this.dbg('execute_script response is:', res);
-        p(res);
+        p(JSON.parse(Buffer.from(res.value).toString('utf8')));
       };
       this.work.push({
         type: FlowWorkType.SCRIPT,
@@ -439,7 +511,6 @@ export class Flow {
     return new Promise((p) => {
       const cb = (err: Error, res: any) => {
         if (err) p(err);
-        this.dbg('execute_transaction response is:', res);
         p(res);
       };
       this.work.push({
@@ -461,18 +532,16 @@ export class Flow {
         transaction(publicKeys: [String], contracts: {String: String}) {
             prepare(signer: AuthAccount) {
                 let acct = AuthAccount(payer: signer)
-        
                 for key in publicKeys {
                     acct.addPublicKey(key.decodeHex())
                 }
-        
                 for contract in contracts.keys {
                     acct.contracts.add(name: contract, code: contracts[contract]!.decodeHex())
                 }
             }
         }`;
 
-      const keys: string[] = [];
+      const keys: Array<string> = [];
 
       newAccountKeys ? newAccountKeys.map((x) => {
         if (x.public) keys.push(x.public);
@@ -485,7 +554,7 @@ export class Flow {
       this.work.push({
         type: FlowWorkType.TRANSACTION,
         script: Buffer.from(createAccountTemplate, 'utf-8'),
-        arguments: [keys],
+        arguments: [keys, new Map<string, string>()],
         proposer: svcBuf,
         payer: svcBuf,
         authorizers: [svcBuf],
@@ -619,6 +688,15 @@ class FlowWorker {
           }
           break;
 
+        case FlowWorkType.SCRIPT:
+          const args = argBuilder(work.arguments);
+          this.client.executeScriptAtLatestBlock({ script: work.script, arguments: args }, (err: any, res: any) => {
+            work.callback(err, res);
+            this.status = FlowWorkerStatus.IDLE;
+            p();
+          });
+          break;
+
         case FlowWorkType.TRANSACTION:
           if (!work.proposer) return Promise.reject(Error('Transaction must have a proposer'));
           if (!work.payer) return Promise.reject(Error('Transaction must have a payer'));
@@ -629,6 +707,7 @@ class FlowWorker {
               this.client.getAccountAtLatestBlock({ address: work.payer }, (err: any, payer: any) => {
                 if (err) p(err);
                 // args
+                const args = argBuilder(work.arguments);
                 // build
                 const mapR = proposer['account'].keys.map((x: AccountKey) => {
                   if (x.public_key.toString('hex') == this.pubKey.replace(/\b0x/g, '')) return [x.id, x.sequence_number];
@@ -638,9 +717,10 @@ class FlowWorker {
                   key_id: mapR[0],
                   sequence_number: mapR[1],
                 };
+                this.dbg(propKey);
                 let transaction: Transaction = {
                   script: work.script ? work.script : Buffer.from('', 'utf-8'),
-                  arguments: [],
+                  arguments: args,
                   reference_block_id: block['block'].id,
                   gas_limit: 9999,
                   proposal_key: propKey,
