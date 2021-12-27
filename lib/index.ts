@@ -6,26 +6,21 @@ import { ec as EC } from 'elliptic';
 import { SHA3 } from 'sha3';
 import { encode } from '@onflow/rlp';
 
-const encodeTransactionPayload = (tx: any): string => prependTransactionDomainTag(rlpEncode(preparePayload(tx)));
-const encodeTransactionEnvelope = (tx: any): string => prependTransactionDomainTag(rlpEncode(prepareEnvelope(tx)));
+const encodeTransactionPayload = (tx: TxPayload): string => rlpEncode(preparePayload(tx));
 
-const rightPaddedHexBuffer = (value: any, pad: any) =>
-  Buffer.from(value.padEnd(pad * 2, 0), 'hex');
+const encodeTransactionEnvelope = (tx: TxEnvelope): string => rlpEncode(prepareEnvelope(tx));
 
-const leftPaddedHexBuffer = (value: any, pad: any) =>
-  Buffer.from(value.padStart(pad * 2, 0), 'hex');
+const rightPaddedHexBuffer = (value: string, pad: number): Buffer => Buffer.from(value.padEnd(pad * 2, '0'), 'hex');
 
-const TRANSACTION_DOMAIN_TAG = rightPaddedHexBuffer(Buffer.from('FLOW-V0.0-transaction', 'utf-8').toString('hex'), 32).toString('hex');
-const prependTransactionDomainTag = (tx: string) => TRANSACTION_DOMAIN_TAG + tx;
+const leftPaddedHexBuffer = (value: string, pad: number): Buffer => Buffer.from(value.padStart(pad * 2, '0'), 'hex');
 
-const addressBuffer = (addr: any) => leftPaddedHexBuffer(addr, 8);
+const addressBuffer = (addr: string) => leftPaddedHexBuffer(addr, 8);
 
-const blockBuffer = (block: any) => leftPaddedHexBuffer(block, 32);
+const blockBuffer = (block: string) => leftPaddedHexBuffer(block, 32);
 
-const argumentToString = (arg: any) => Buffer.from(JSON.stringify(arg), 'utf8');
+const scriptBuffer = (script: string) => Buffer.from(script, 'utf8');
 
-const scriptBuffer = (script: any) => Buffer.from(script, 'utf8');
-const signatureBuffer = (signature: any) => Buffer.from(signature, 'hex');
+const signatureBuffer = (signature: string) => Buffer.from(signature, 'hex');
 
 const rlpEncode = (v: any): string => {
   return encode(v).toString('hex');
@@ -108,45 +103,60 @@ const argBuilder = (args: any[]): Buffer[] => {
   return bufs;
 };
 
-const preparePayload = (tx: any) => {
+interface TxPayload {
+  script: string,
+  arguments: Buffer[],
+  refBlock: string,
+  gasLimit: number,
+  proposalKey: TransactionProposalKey,
+  payer: string,
+  authorizers: string[]
+}
+
+interface TxEnvelope {
+  script: string,
+  arguments: Buffer[],
+  refBlock: string,
+  gasLimit: number,
+  proposalKey: TransactionProposalKey,
+  payer: string,
+  authorizers: string[],
+  payload_signatures: Sig[]
+}
+
+const preparePayload = (tx: TxPayload) => {
   return [
     scriptBuffer(tx.script),
-    tx.arguments.map(argumentToString),
+    tx.arguments,
     blockBuffer(tx.refBlock),
     tx.gasLimit,
-    addressBuffer(tx.proposalKey.address),
-    tx.proposalKey.keyId,
-    tx.proposalKey.sequenceNum,
+    addressBuffer(tx.proposalKey.address.toString('hex')),
+    tx.proposalKey.key_id,
+    tx.proposalKey.sequence_number,
     addressBuffer(tx.payer),
     tx.authorizers.map(addressBuffer),
   ];
 };
 
-const prepareEnvelope = (tx: any) => {
+const prepareEnvelope = (tx: TxEnvelope) => {
   return [preparePayload(tx), preparePayloadSignatures(tx)];
 };
 
-const preparePayloadSignatures = (tx: any) => {
+const preparePayloadSignatures = (tx: TxEnvelope) => {
   const signers = collectSigners(tx);
 
-  return tx.payloadSigs.map((sig: any) => {
+  return tx.payload_signatures.map((sig: Sig) => {
     return {
       signerIndex: signers.get(sig.address),
       keyId: sig.keyId,
       sig: sig.sig,
     };
-  }).sort((a: any, b: any) => {
-    if (a.signerIndex > b.signerIndex) return 1;
-    if (a.signerIndex < b.signerIndex) return -1;
-
-    if (a.keyId > b.keyId) return 1;
-    if (a.keyId < b.keyId) return -1;
-  }).map((sig: any) => {
-    return [sig.signerIndex, sig.keyId, signatureBuffer(sig.sig)];
+  }).map((sig: any, i: number) => {
+    return [i, sig.keyId, signatureBuffer(sig.sig)];
   });
 };
 
-const collectSigners = (tx: any) => {
+const collectSigners = (tx: TxEnvelope) => {
   const signers = new Map();
   let i = 0;
 
@@ -164,21 +174,21 @@ const collectSigners = (tx: any) => {
   return signers;
 };
 
-const produceSignature = (privateKey: string, msg: string): string => {
-  const debugLog = debug(`produceSignature`);
-  debugLog(msg);
+const TX_DOMAIN_TAG_HEX = rightPaddedHexBuffer(Buffer.from('FLOW-V0.0-transaction').toString('hex'), 32).toString('hex');
+
+function transactionSignature(msg: string, privateKey: string): string {
   const ec = new EC('p256');
   const key = ec.keyFromPrivate(Buffer.from(privateKey, 'hex'));
   const sha = new SHA3(256);
-  sha.update(Buffer.from(msg, 'hex'));
+  const totalMsgHex = TX_DOMAIN_TAG_HEX + msg;
+  sha.update(Buffer.from(totalMsgHex, 'hex'));
   const digest = sha.digest();
   const sig = key.sign(digest);
   const n = 32;
   const r = sig.r.toArrayLike(Buffer, 'be', n);
   const s = sig.s.toArrayLike(Buffer, 'be', n);
   return Buffer.concat([r, s]).toString('hex');
-};
-
+}
 
 // eslint-disable-next-line no-unused-vars
 export enum FlowNetwork {
@@ -237,6 +247,18 @@ export interface FlowKey {
   private: string;
   public: string;
 }
+
+export interface AddKey {
+  public: string;
+  weight: number;
+}
+
+const encodePublicKeyForFlow = (a: AddKey) => encode([
+  Buffer.from(a.public, 'hex'), // publicKey hex to binary
+  2, // P256
+  3, // SHA3-256
+  a.weight > 0 ? a.weight : 1, // cannot be null or negative
+]).toString('hex');
 
 export interface Account {
   address: Buffer;
@@ -364,14 +386,14 @@ const signTransaction = (transaction: Transaction, payloadSignatures: Sign[], en
       refBlock: tr.reference_block_id.toString('hex'),
       gasLimit: tr.gas_limit,
       proposalKey: {
-        address: tr.proposal_key.address.toString('hex'),
-        keyId: tr.proposal_key.key_id,
-        sequenceNum: tr.proposal_key.sequence_number,
+        address: tr.proposal_key.address,
+        key_id: tr.proposal_key.key_id,
+        sequence_number: tr.proposal_key.sequence_number,
       },
       payer: tr.payer.toString('hex'),
       authorizers: tr.authorizers.map((x) => x.toString('hex')),
     });
-    const thisSig = produceSignature(ps.private_key, payloadMsg);
+    const thisSig = transactionSignature(payloadMsg, ps.private_key);
     tr.payload_signatures.push({ address: Buffer.from(ps.address, 'hex'), key_id: ps.key_id, signature: Buffer.from(thisSig, 'hex') });
     payloadSigs.push({ address: ps.address, keyId: ps.key_id, sig: thisSig });
   });
@@ -382,15 +404,15 @@ const signTransaction = (transaction: Transaction, payloadSignatures: Sign[], en
       refBlock: tr.reference_block_id.toString('hex'),
       gasLimit: tr.gas_limit,
       proposalKey: {
-        address: tr.proposal_key.address.toString('hex'),
-        keyId: tr.proposal_key.key_id,
-        sequenceNum: tr.proposal_key.sequence_number,
+        address: tr.proposal_key.address,
+        key_id: tr.proposal_key.key_id,
+        sequence_number: tr.proposal_key.sequence_number,
       },
       payer: tr.payer.toString('hex'),
-      payloadSigs: payloadSigs,
+      payload_signatures: payloadSigs,
       authorizers: tr.authorizers.map((x) => x.toString('hex')),
     });
-    const thisSig = produceSignature(es.private_key, envelopeMsg);
+    const thisSig = transactionSignature(envelopeMsg, es.private_key);
     tr.envelope_signatures.push({ address: Buffer.from(es.address, 'hex'), key_id: es.key_id, signature: Buffer.from(thisSig, 'hex') });
   });
   return tr;
@@ -459,9 +481,6 @@ export class Flow {
             w.process(this.work.splice(0, 1)[0]);
           }
         });
-        if (this.work.length > 0) {
-          this.dbg('All workers are busy, work remaining:', this.work.length);
-        }
         if (this.shutdown) this.dbg('Cleaning up for shutdown');
       }
       if (this.error) console.log('Error:', this.error);
@@ -521,7 +540,7 @@ export class Flow {
       });
     });
   }
-  async create_account(newAccountKeys?: Array<FlowKey>): Promise<any> {
+  async create_account(newAccountKeys?: Array<AddKey | string>): Promise<any> {
     return new Promise((p) => {
       const cb = (err: Error, res: any) => {
         if (err) p(err);
@@ -543,10 +562,12 @@ export class Flow {
 
       const keys: Array<string> = [];
 
-      newAccountKeys ? newAccountKeys.map((x) => {
-        if (x.public) keys.push(x.public);
-      }) : this.privateKeys.map((x) => {
-        if (x.public) keys.push(x.public);
+      newAccountKeys?.forEach((k) => {
+        if (typeof k == 'object') {
+          keys.push(encodePublicKeyForFlow(k));
+        } else {
+          keys.push(encodePublicKeyForFlow({ public: k, weight: 1000 }));
+        }
       });
 
       const svcBuf = Buffer.from(this.serviceAccountAddress, 'hex');
@@ -717,7 +738,6 @@ class FlowWorker {
                   key_id: mapR[0],
                   sequence_number: mapR[1],
                 };
-                this.dbg(propKey);
                 let transaction: Transaction = {
                   script: work.script ? work.script : Buffer.from('', 'utf-8'),
                   arguments: args,
@@ -740,6 +760,7 @@ class FlowWorker {
                 this.client.sendTransaction({ transaction: transaction }, (err: any, trans: any) => {
                   work.callback(err, trans);
                   this.status = FlowWorkerStatus.IDLE;
+                  this.dbg('Done with', FlowWorkType[work.type]);
                   p();
                 });
               });

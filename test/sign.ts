@@ -31,15 +31,14 @@ const VERIFY_SIG = `
 
 const rightPaddedHexBuffer = (value: string, pad: number): Buffer => Buffer.from(value.padEnd(pad * 2, '0'), 'hex');
 const USER_DOMAIN_TAG_HEX = rightPaddedHexBuffer(Buffer.from('FLOW-V0.0-user').toString('hex'), 32).toString('hex');
+// const TX_DOMAIN_TAG_HEX = rightPaddedHexBuffer(Buffer.from('FLOW-V0.0-transaction').toString('hex'), 32).toString('hex');
 
-function signMessage() {
-  debugLog('signing message:', MESSAGE_HEX);
+function signMessage(msg: string, privateKey: string) {
+  debugLog('signing message:', msg);
   const ec = new EC('p256');
-  const key = ec.keyFromPrivate(Buffer.from(PRIVATE_KEY, 'hex'));
-  debugLog('key', key);
-  debugLog('public', key.getPublic().encode('hex', false));
+  const key = ec.keyFromPrivate(Buffer.from(privateKey, 'hex'));
   const sha = new SHA3(256);
-  const totalMsgHex = USER_DOMAIN_TAG_HEX + MESSAGE_HEX;
+  const totalMsgHex = USER_DOMAIN_TAG_HEX + msg;
   sha.update(Buffer.from(totalMsgHex, 'hex'));
   const digest = sha.digest();
   const sig = key.sign(digest);
@@ -50,10 +49,10 @@ function signMessage() {
 }
 
 export const test = async () => {
-  const signature = signMessage();
+  const signature = signMessage(MESSAGE_HEX, PRIVATE_KEY);
   await flow.start();
   const verificationResult = await flow.execute_script(VERIFY_SIG, [MESSAGE_HEX, signature]);
-  debugLog(Buffer.from(verificationResult.value).toString('utf8'));
+  debugLog(verificationResult);
   flow.stop();
 };
 

@@ -117,7 +117,8 @@ export const createAccountTest = async (): Promise<Boolean | Error> => {
     const dbg = debug('Test flow.create_account');
     dbg('Beginning Test');
     try {
-      const newAccount = await flow.create_account();
+      // eslint-disable-next-line max-len
+      const newAccount = await flow.create_account(['259de136f61d61e8a2c803a31c9d3fd842d0fae513466fbf9a83389b30b812786724c4b43cc658403b4f433c571a3d131cc9c0c0890360c3012143c6fbf68df4']);
       if (newAccount instanceof Error) return Promise.reject(newAccount);
       dbg(newAccount);
       dbg('Test Successful');
