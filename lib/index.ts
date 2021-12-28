@@ -243,19 +243,19 @@ const argParse = (arg: any): Object => {
       // handle bigint
       return {
         type: 'Int64',
-        value: arg,
+        value: arg.toString(),
       };
     case 'number':
       // handle number
       if (Number.isInteger(arg)) {
         return {
           type: 'Int',
-          value: arg,
+          value: arg.toString(),
         };
       } else {
         return {
           type: 'Fix64',
-          value: arg,
+          value: arg.toString(),
         };
       }
 
@@ -653,14 +653,148 @@ export class Flow {
 
       const svcBuf = Buffer.from(this.serviceAccountAddress, 'hex');
 
+      const prop = { address: svcBuf, privateKey: '', publicKey: '' };
+
       this.work.push({
         type: FlowWorkType.TRANSACTION,
         script: Buffer.from(createAccountTemplate, 'utf-8'),
         arguments: [keys, new Map<string, string>()],
         payer: svcBuf,
-        authorizers: [{ address: svcBuf, privateKey: '', publicKey: '' }],
+        proposer: prop,
+        authorizers: [prop],
         payload_signatures: [],
-        envelope_signatures: [{ address: svcBuf, privateKey: '', publicKey: '' }],
+        envelope_signatures: [prop],
+        callback: cb,
+      });
+    });
+  }
+  async add_contract(contractName: string, contract: string, account: Proposal): Promise<TransactionResultResponse | Error> {
+    return new Promise((p) => {
+      const cb = (err: Error, res: any) => {
+        if (err) p(err);
+        p(res);
+      };
+      const addContractTemplate = `
+        transaction(name: String, code: String) {
+          prepare(signer: AuthAccount) {
+            signer.contracts.add(name: name, code: code.decodeHex())
+          }
+        }
+      `;
+      this.work.push({
+        type: FlowWorkType.TRANSACTION,
+        script: Buffer.from(addContractTemplate, 'utf-8'),
+        arguments: [contractName, Buffer.from(contract, 'utf-8').toString('hex')],
+        payer: account.address,
+        proposer: account,
+        authorizers: [account],
+        payload_signatures: [],
+        envelope_signatures: [account],
+        callback: cb,
+      });
+    });
+  }
+  async add_key(key: AddKey, account: Proposal): Promise<TransactionResultResponse | Error> {
+    return new Promise((p) => {
+      const cb = (err: Error, res: any) => {
+        if (err) p(err);
+        p(res);
+      };
+      const addKeyTemplate = `
+        transaction(publicKey: String) {
+            prepare(signer: AuthAccount) {
+                signer.addPublicKey(publicKey.decodeHex())
+            }
+        }
+      `;
+      const pubKey = encodePublicKeyForFlow(key);
+      this.work.push({
+        type: FlowWorkType.TRANSACTION,
+        script: Buffer.from(addKeyTemplate, 'utf-8'),
+        arguments: [pubKey],
+        payer: account.address,
+        proposer: account,
+        authorizers: [account],
+        payload_signatures: [],
+        envelope_signatures: [account],
+        callback: cb,
+      });
+    });
+  }
+  async remove_key(keyIndex: number, account: Proposal): Promise<TransactionResultResponse | Error> {
+    return new Promise((p) => {
+      const cb = (err: Error, res: any) => {
+        if (err) p(err);
+        p(res);
+      };
+      const addKeyTemplate = `
+        transaction(keyIndex: Int) {
+            prepare(signer: AuthAccount) {
+                signer.removePublicKey(keyIndex)
+            }
+        }
+      `;
+      this.work.push({
+        type: FlowWorkType.TRANSACTION,
+        script: Buffer.from(addKeyTemplate, 'utf-8'),
+        arguments: [keyIndex],
+        payer: account.address,
+        proposer: account,
+        authorizers: [account],
+        payload_signatures: [],
+        envelope_signatures: [account],
+        callback: cb,
+      });
+    });
+  }
+  async update_contract(contractName: string, contract: string, account: Proposal): Promise<TransactionResultResponse | Error> {
+    return new Promise((p) => {
+      const cb = (err: Error, res: any) => {
+        if (err) p(err);
+        p(res);
+      };
+      const updateContractTemplate = `
+        transaction(name: String, code: String) {
+          prepare(signer: AuthAccount) {
+            signer.contracts.update__experimental(name: name, code: code.decodeHex())
+          }
+        }
+      `;
+      this.work.push({
+        type: FlowWorkType.TRANSACTION,
+        script: Buffer.from(updateContractTemplate, 'utf-8'),
+        arguments: [contractName, Buffer.from(contract, 'utf-8').toString('hex')],
+        payer: account.address,
+        proposer: account,
+        authorizers: [account],
+        payload_signatures: [],
+        envelope_signatures: [account],
+        callback: cb,
+      });
+    });
+  }
+  async remove_contract(contractName: string, account: Proposal): Promise<TransactionResultResponse | Error> {
+    return new Promise((p) => {
+      const cb = (err: Error, res: any) => {
+        if (err) p(err);
+        p(res);
+      };
+      const updateContractTemplate = `
+        transaction(name: String) {
+          prepare(signer: AuthAccount) {
+            signer.contracts.remove(name: name)
+          }
+        }
+      `;
+      this.work.push({
+        type: FlowWorkType.TRANSACTION,
+        script: Buffer.from(updateContractTemplate, 'utf-8'),
+        arguments: [contractName],
+        payer: account.address,
+        proposer: account,
+        authorizers: [account],
+        payload_signatures: [],
+        envelope_signatures: [account],
         callback: cb,
       });
     });

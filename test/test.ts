@@ -10,7 +10,7 @@ const key0: FlowKey = {
 const flow = new Flow(FlowNetwork.EMULATOR, '0xf8d6e0586b0a20c7', [key0], 5);
 
 let newTestAccount = '';
-let newTestAccount2 = '';
+// let newTestAccount2 = '';
 const newTestKeys: Keys = {
   private: 'e15abdfb61b936bc327db72d51279207263ec6630a56f30dbf3ecb56f58316e1',
   public: 'f70d48c7b8fd06436a166bb3c9fd59be2b629d572a7ec01ea5389fd8a4cb7bad3922ef0313c484b0073b0a759ce4aa899371831670a2dc52848e441b29fda06d',
@@ -20,10 +20,14 @@ export const runTests = async () => {
   debugLog('Beginning Tests');
   await connectionTest();
   await getAccountTest();
-  await getAccountStressTest();
   await getBlockTest();
   await createAccountTest();
   await executeTransactionTest();
+  await deployContractTest();
+  await updateContractTest();
+  await removeContractTest();
+  await addKeyTest();
+  await removeKeyTest();
   flow.stop();
 };
 
@@ -58,49 +62,6 @@ export const getAccountTest = async (): Promise<Boolean | Error> => {
     }
   });
 };
-
-export const getAccountStressTest = async (): Promise<Boolean | Error> => {
-  return await new Promise(async (p) => {
-    const dbg = debug('Stress test get_account');
-    dbg('Beginning Test');
-    try {
-      const testArray: Promise<any>[] = [];
-      let i = 0;
-      while (i++ < 100) {
-        testArray.push(new Promise(async (e) => {
-          const account = await flow.get_account('0xf8d6e0586b0a20c7');
-          if (account instanceof Error) return Promise.reject(account);
-          e(account);
-        }));
-      }
-      await Promise.all(testArray);
-      dbg('Test Successful');
-      p(true);
-    } catch (error) {
-      dbg('Test failed');
-      p(Error(JSON.stringify(error)));
-    }
-  });
-};
-
-// the following is not implemented for flow emulator
-//
-/* export const getAccountAtBlockHeightTest = async (): Promise<Boolean | Error> => {
-  return await new Promise(async (p) => {
-    const dbg = debug('Test flow.get_account with block_height');
-    dbg('Beginning Test');
-    try {
-      const account = await flow.get_account('0xf8d6e0586b0a20c7', 0); // checking account at height 0
-      if (account instanceof Error) return Promise.reject(account);
-      dbg('Account:', account.address.toString('hex'));
-      dbg('Test Successful');
-      p(true);
-    } catch (error) {
-      dbg('Test failed');
-      p(Error(JSON.stringify(error)));
-    }
-  });
-}; */
 
 export const getBlockTest = async (): Promise<Boolean | Error> => {
   return await new Promise(async (p) => {
@@ -152,29 +113,27 @@ export const executeTransactionTest = async (): Promise<Boolean | Error> => {
       }
     }
   `;
-  const doubleAuthz = `
+  /* const doubleAuthz = `
   transaction(greeting: String, greeting2: String) {
 
     let guest: String
     let guest2: String
-  
     prepare(authorizer: AuthAccount, authorizer2: AuthAccount) {
       self.guest = authorizer.address.toString()
       self.guest2 = authorizer2.address.toString()
     }
-  
     execute {
       log(greeting.concat(",").concat(self.guest).concat(",").concat(greeting2).concat(",").concat(self.guest2))
     }
   }
-  `;
+  `; */
   return await new Promise(async (p) => {
     const dbg = debug('Test flow.execute_transaction');
     dbg('Beginning Test');
     try {
       const newAccount = await flow.create_account([newTestKeys.public]);
       if (newAccount instanceof Error) return Promise.reject(newAccount);
-      newTestAccount2 = newAccount.events.filter((x) => x.type == 'flow.AccountCreated')[0].payload.value.fields[0].value.value;
+      newTestAccount = newAccount.events.filter((x) => x.type == 'flow.AccountCreated')[0].payload.value.fields[0].value.value;
       // test simple transaction, proposed and paid by the pre-defined service account
       await flow.execute_transaction(simpleTransaction, ['hello']);
       // test simple transaction, proposed and paid by the newTestAccount
@@ -183,17 +142,170 @@ export const executeTransactionTest = async (): Promise<Boolean | Error> => {
         privateKey: newTestKeys.private,
         publicKey: newTestKeys.public,
       };
-      const prop2 = {
+      /* const prop2 = {
         address: Buffer.from(newTestAccount2.replace(/\b0x/g, ''), 'hex'),
         privateKey: newTestKeys.private,
         publicKey: newTestKeys.public,
-      };
+      }; */
       await flow.execute_transaction(simpleTransaction, ['world'], prop, prop, [prop]);
       // test simple transaction proposed by the newTestAccount, paid by the serviceAccount
       await flow.execute_transaction(simpleTransaction, ['world'], prop, undefined, [prop]);
       // test double authorizer transaction
-      await flow.execute_transaction(doubleAuthz, ['hello', 'world'], prop, undefined, [prop, prop2]);
+      // await flow.execute_transaction(doubleAuthz, ['hello', 'world'], prop, undefined, [prop, prop2]);
 
+      dbg('Test Successful');
+      p(true);
+    } catch (error) {
+      dbg('Test failed');
+      p(Error(JSON.stringify(error)));
+    }
+  });
+};
+
+export const deployContractTest = async (): Promise<Boolean | Error> => {
+  const dbg = debug('Test flow.add_contract');
+  dbg('Beginning Test');
+
+  return new Promise(async (p) => {
+    try {
+      const newContract = `
+        pub contract HelloWorld {
+          // Declare a stored state field in HelloWorld
+          //
+          pub let greeting: String
+      
+          // Declare a function that can be called by anyone
+          // who imports the contract
+          //
+          pub fun hello(): String {
+              return self.greeting
+          }
+          init() {
+              self.greeting = \"Hello World!\"
+          }
+        }
+      `;
+      const acct = {
+        address: Buffer.from(newTestAccount.replace(/\b0x/g, ''), 'hex'),
+        privateKey: newTestKeys.private,
+        publicKey: newTestKeys.public,
+      };
+      const txResult = await flow.add_contract('HelloWorld', newContract, acct);
+      if (txResult instanceof Error) return Promise.reject(txResult);
+      if (txResult.events[0].type !== 'flow.AccountContractAdded') return Promise.reject(Error('failed to add contract'));
+      dbg('Test Successful');
+      p(true);
+    } catch (error) {
+      dbg('Test failed');
+      p(Error(JSON.stringify(error)));
+    }
+  });
+};
+
+export const updateContractTest = async (): Promise<Boolean | Error> => {
+  const dbg = debug('Test flow.update_contract');
+  dbg('Beginning Test');
+
+  return new Promise(async (p) => {
+    try {
+      const newContract = `
+        pub contract HelloWorld {
+          // Declare a stored state field in HelloWorld
+          // this is the new line :)
+          pub let greeting: String
+      
+          // Declare a function that can be called by anyone
+          // who imports the contract
+          //
+          pub fun hello(): String {
+              return self.greeting
+          }
+          init() {
+              self.greeting = \"Hello World!\"
+          }
+        }
+      `;
+      const acct = {
+        address: Buffer.from(newTestAccount.replace(/\b0x/g, ''), 'hex'),
+        privateKey: newTestKeys.private,
+        publicKey: newTestKeys.public,
+      };
+      const txResult = await flow.update_contract('HelloWorld', newContract, acct);
+      if (txResult instanceof Error) return Promise.reject(txResult);
+      if (txResult.events[0].type !== 'flow.AccountContractUpdated') return Promise.reject(Error('failed to update contract'));
+      dbg('Test Successful');
+      p(true);
+    } catch (error) {
+      dbg('Test failed');
+      p(Error(JSON.stringify(error)));
+    }
+  });
+};
+
+export const removeContractTest = async (): Promise<Boolean | Error> => {
+  const dbg = debug('Test flow.remove_contract');
+  dbg('Beginning Test');
+
+  return new Promise(async (p) => {
+    try {
+      const acct = {
+        address: Buffer.from(newTestAccount.replace(/\b0x/g, ''), 'hex'),
+        privateKey: newTestKeys.private,
+        publicKey: newTestKeys.public,
+      };
+      const txResult = await flow.remove_contract('HelloWorld', acct);
+      if (txResult instanceof Error) return Promise.reject(txResult);
+      if (txResult.events[0].type !== 'flow.AccountContractRemoved') return Promise.reject(Error('failed to remove contract'));
+      dbg('Test Successful');
+      p(true);
+    } catch (error) {
+      dbg('Test failed');
+      p(Error(JSON.stringify(error)));
+    }
+  });
+};
+
+export const addKeyTest = async (): Promise<Boolean | Error> => {
+  const dbg = debug('Test flow.add_key');
+  dbg('Beginning Test');
+
+  return new Promise(async (p) => {
+    try {
+      const acct = {
+        address: Buffer.from(newTestAccount.replace(/\b0x/g, ''), 'hex'),
+        privateKey: newTestKeys.private,
+        publicKey: newTestKeys.public,
+      };
+      const newKey = {
+        public: 'db19d449532f529445e01410c0e2b9dda0c82d9b3adda9e6b9ba2c3f9b9b85c2ab740029e6bdaee99c9b9ffef9ca4bcba9e0666c7bd5e032e6a7c61eb7b5a7a6',
+        weight: 1000,
+      };
+      const txResult = await flow.add_key(newKey, acct);
+      if (txResult instanceof Error) return Promise.reject(txResult);
+      if (txResult.events[0].type !== 'flow.AccountKeyAdded') return Promise.reject(Error('failed to add key'));
+      dbg('Test Successful');
+      p(true);
+    } catch (error) {
+      dbg('Test failed');
+      p(Error(JSON.stringify(error)));
+    }
+  });
+};
+
+export const removeKeyTest = async (): Promise<Boolean | Error> => {
+  const dbg = debug('Test flow.remove_key');
+  dbg('Beginning Test');
+
+  return new Promise(async (p) => {
+    try {
+      const acct = {
+        address: Buffer.from(newTestAccount.replace(/\b0x/g, ''), 'hex'),
+        privateKey: newTestKeys.private,
+        publicKey: newTestKeys.public,
+      };
+      const txResult = await flow.remove_key(1, acct);
+      if (txResult instanceof Error) return Promise.reject(txResult);
+      if (txResult.events[0].type !== 'flow.AccountKeyRemoved') return Promise.reject(Error('failed to remove key'));
       dbg('Test Successful');
       p(true);
     } catch (error) {
