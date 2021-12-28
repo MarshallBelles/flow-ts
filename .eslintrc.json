@@ -16,7 +16,7 @@
     ],
     "rules": {
         "require-jsdoc": 0,
-        "max-len":["error", { "code": 180 }],
+        "max-len":["error", { "code": 280 }],
         "object-curly-spacing":["error","always"]
     }
 }

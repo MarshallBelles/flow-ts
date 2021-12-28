@@ -6,6 +6,195 @@ import { ec as EC } from 'elliptic';
 import { SHA3 } from 'sha3';
 import { encode } from '@onflow/rlp';
 
+export interface TransactionResultResponse {
+  status: string;
+  status_code: number;
+  error_message: string;
+  events: Array<Event>;
+}
+
+export interface Event {
+  type: string;
+  transaction_id: Buffer;
+  transaction_index: number;
+  event_index: number;
+  payload: EventPayload;
+}
+
+export interface EventPayload {
+  event: string;
+  value: {
+    id: string;
+    fields: Array<{
+      name: string;
+      value: {
+        type: string;
+        value: any
+      }
+    }>;
+  }
+}
+
+export interface FlowKey {
+  keyID: number;
+  private: string;
+  public: string;
+}
+
+export interface AddKey {
+  public: string;
+  weight: number;
+}
+
+export interface Account {
+  address: Buffer;
+  balance: number;
+  code: Buffer;
+  keys: Array<AccountKey>;
+  contracts: Object;
+}
+
+export interface Block {
+  id: Buffer;
+  parent_id: Buffer;
+  height: number;
+  timestamp: Timestamp;
+  collection_guarantees: Array<CollectionGuarantee>;
+  block_seals: Array<BlockSeal>;
+  signatures: Array<Buffer>;
+}
+
+export interface Timestamp {
+  // Represents seconds of UTC time since Unix epoch
+  // 1970-01-01T00:00:00Z. Must be from 0001-01-01T00:00:00Z to
+  // 9999-12-31T23:59:59Z inclusive.
+  seconds: number;
+
+  // Non-negative fractions of a second at nanosecond resolution. Negative
+  // second values with fractions must still have non-negative nanos values
+  // that count forward in time. Must be from 0 to 999,999,999
+  // inclusive.
+  nanos: number;
+}
+
+export interface CollectionGuarantee {
+  collection_id: Buffer;
+  signatures: Array<Buffer>;
+}
+
+export interface BlockSeal {
+  block_id: Buffer;
+  execution_receipt_id: Buffer;
+  execution_receipt_signatures: Array<Buffer>;
+  result_approval_signatures: Array<Buffer>;
+}
+
+export interface AccountKey {
+  id: number;
+  public_key: Buffer,
+  sign_algo: number;
+  hash_algo: number;
+  weight: number;
+  sequence_number: number;
+  revoked: Boolean;
+}
+
+export interface Transaction {
+  script: Buffer;
+  arguments: Array<Buffer>;
+  reference_block_id: Buffer;
+  gas_limit: number;
+  proposal_key: TransactionProposalKey;
+  payer: Buffer;
+  authorizers: Array<Buffer>;
+  payload_signatures: Array<TransactionSignature>;
+  envelope_signatures: Array<TransactionSignature>;
+}
+
+export interface TransactionProposalKey {
+  address: Buffer;
+  key_id: number;
+  sequence_number: number;
+}
+
+interface Proposal {
+  address: Buffer;
+  privateKey: string;
+  publicKey: string;
+}
+
+export interface TransactionSignature {
+  address: Buffer;
+  key_id: number;
+  signature: Buffer;
+}
+
+export interface Sign {
+  address: string,
+  key_id: number,
+  private_key: string,
+}
+
+export enum TransactionStatus {
+  // eslint-disable-next-line no-unused-vars
+  UNKNOWN,
+  // eslint-disable-next-line no-unused-vars
+  PENDING,
+  // eslint-disable-next-line no-unused-vars
+  FINALIZED,
+  // eslint-disable-next-line no-unused-vars
+  EXECUTED,
+  // eslint-disable-next-line no-unused-vars
+  SEALED,
+  // eslint-disable-next-line no-unused-vars
+  EXPIRED,
+}
+
+interface Sig {
+  address: string;
+  keyId: number;
+  sig: string;
+  signerIndex?: number;
+}
+
+interface FlowWork {
+  type: FlowWorkType;
+  arguments: Array<any>;
+  callback: Function;
+  script?: Buffer;
+  proposer?: Proposal;
+  authorizers?: Array<Proposal>;
+  payer?: Buffer;
+  payload_signatures?: Array<Proposal>;
+  envelope_signatures?: Array<Proposal>;
+}
+
+interface TxPayload {
+  script: string;
+  arguments: Buffer[];
+  refBlock: string;
+  gasLimit: number;
+  proposalKey: TransactionProposalKey;
+  payer: string;
+  authorizers: string[];
+}
+
+interface TxEnvelope {
+  script: string,
+  arguments: Buffer[],
+  refBlock: string,
+  gasLimit: number,
+  proposalKey: TransactionProposalKey,
+  payer: string,
+  authorizers: string[],
+  payload_signatures: Sig[]
+}
+
+export interface Keys {
+  public: string;
+  private: string;
+}
+
 const encodeTransactionPayload = (tx: TxPayload): string => rlpEncode(preparePayload(tx));
 
 const encodeTransactionEnvelope = (tx: TxEnvelope): string => rlpEncode(prepareEnvelope(tx));
@@ -21,6 +210,16 @@ const blockBuffer = (block: string) => leftPaddedHexBuffer(block, 32);
 const scriptBuffer = (script: string) => Buffer.from(script, 'utf8');
 
 const signatureBuffer = (signature: string) => Buffer.from(signature, 'hex');
+
+// not ready for prime time just yet
+/* export const keygen = (): Keys => {
+  const ec = new EC('p256');
+  const kp = ec.genKeyPair();
+  return {
+    private: kp.getPrivate().toString('hex'),
+    public: kp.getPublic().encode('hex', false),
+  };
+}; */
 
 const rlpEncode = (v: any): string => {
   return encode(v).toString('hex');
@@ -102,27 +301,6 @@ const argBuilder = (args: any[]): Buffer[] => {
   });
   return bufs;
 };
-
-interface TxPayload {
-  script: string,
-  arguments: Buffer[],
-  refBlock: string,
-  gasLimit: number,
-  proposalKey: TransactionProposalKey,
-  payer: string,
-  authorizers: string[]
-}
-
-interface TxEnvelope {
-  script: string,
-  arguments: Buffer[],
-  refBlock: string,
-  gasLimit: number,
-  proposalKey: TransactionProposalKey,
-  payer: string,
-  authorizers: string[],
-  payload_signatures: Sig[]
-}
 
 const preparePayload = (tx: TxPayload) => {
   return [
@@ -242,16 +420,12 @@ enum FlowWorkerStatus {
   PROCESSING,
 }
 
-export interface FlowKey {
-  keyID: number;
-  private: string;
-  public: string;
-}
-
-export interface AddKey {
-  public: string;
-  weight: number;
-}
+const processEvents = (txr: any): void => {
+  txr.events.forEach((evt: any, i: number) => {
+    const pld: EventPayload = JSON.parse(evt.payload.toString('utf-8'));
+    txr.events[i].payload = pld;
+  });
+};
 
 const encodePublicKeyForFlow = (a: AddKey) => encode([
   Buffer.from(a.public, 'hex'), // publicKey hex to binary
@@ -259,122 +433,6 @@ const encodePublicKeyForFlow = (a: AddKey) => encode([
   3, // SHA3-256
   a.weight > 0 ? a.weight : 1, // cannot be null or negative
 ]).toString('hex');
-
-export interface Account {
-  address: Buffer;
-  balance: number;
-  code: Buffer;
-  keys: Array<AccountKey>;
-  contracts: Object;
-}
-
-export interface Block {
-  id: Buffer;
-  parent_id: Buffer;
-  height: number;
-  timestamp: Timestamp;
-  collection_guarantees: Array<CollectionGuarantee>;
-  block_seals: Array<BlockSeal>;
-  signatures: Array<Buffer>;
-}
-
-export interface Timestamp {
-  // Represents seconds of UTC time since Unix epoch
-  // 1970-01-01T00:00:00Z. Must be from 0001-01-01T00:00:00Z to
-  // 9999-12-31T23:59:59Z inclusive.
-  seconds: number;
-
-  // Non-negative fractions of a second at nanosecond resolution. Negative
-  // second values with fractions must still have non-negative nanos values
-  // that count forward in time. Must be from 0 to 999,999,999
-  // inclusive.
-  nanos: number;
-}
-
-export interface CollectionGuarantee {
-  collection_id: Buffer;
-  signatures: Array<Buffer>;
-}
-
-export interface BlockSeal {
-  block_id: Buffer;
-  execution_receipt_id: Buffer;
-  execution_receipt_signatures: Array<Buffer>;
-  result_approval_signatures: Array<Buffer>;
-}
-
-export interface AccountKey {
-  id: number;
-  public_key: Buffer,
-  sign_algo: number;
-  hash_algo: number;
-  weight: number;
-  sequence_number: number;
-  revoked: Boolean;
-}
-
-export interface Transaction {
-  script: Buffer;
-  arguments: Array<Buffer>;
-  reference_block_id: Buffer;
-  gas_limit: number;
-  proposal_key: TransactionProposalKey;
-  payer: Buffer;
-  authorizers: Array<Buffer>;
-  payload_signatures: Array<TransactionSignature>;
-  envelope_signatures: Array<TransactionSignature>;
-}
-
-export interface TransactionProposalKey {
-  address: Buffer;
-  key_id: number;
-  sequence_number: number;
-}
-
-export interface TransactionSignature {
-  address: Buffer;
-  key_id: number;
-  signature: Buffer;
-}
-
-export enum TransactionStatus {
-  // eslint-disable-next-line no-unused-vars
-  UNKNOWN,
-  // eslint-disable-next-line no-unused-vars
-  PENDING,
-  // eslint-disable-next-line no-unused-vars
-  FINALIZED,
-  // eslint-disable-next-line no-unused-vars
-  EXECUTED,
-  // eslint-disable-next-line no-unused-vars
-  SEALED,
-  // eslint-disable-next-line no-unused-vars
-  EXPIRED,
-}
-
-export interface Sign {
-  address: string,
-  key_id: number,
-  private_key: string,
-}
-
-interface Sig {
-  address: string;
-  keyId: number;
-  sig: string;
-  signerIndex?: number;
-}
-
-interface FlowWork {
-  type: FlowWorkType;
-  arguments: Array<any>;
-  callback: Function;
-  script?: Buffer;
-  proposer?: Buffer;
-  authorizers?: Array<Buffer>,
-  payer?: Buffer;
-  payload_signatures?: Array<Sign>,
-}
 
 const signTransaction = (transaction: Transaction, payloadSignatures: Sign[], envelopeSignatures: Sign[]): Transaction => {
   const tr = transaction;
@@ -526,23 +584,46 @@ export class Flow {
       });
     });
   }
-  async execute_transaction(script: string, arg: any[]): Promise<any> {
+  async execute_transaction(script: string, arg: any[], proposer?: Proposal, payer?: Proposal, authorizers?: Array<Proposal>): Promise<any> {
     return new Promise((p) => {
+      if (!payer) payer = { address: Buffer.from(this.serviceAccountAddress, 'hex'), privateKey: '', publicKey: '' };
       const cb = (err: Error, res: any) => {
         if (err) p(err);
         p(res);
       };
+      const svcBuf = Buffer.from(this.serviceAccountAddress, 'hex');
+      const prop = proposer ? proposer : payer;
+
+      const payloadSigs: Proposal[] = [];
+      const envelopeSigs: Proposal[] = [];
+      // for each authorizer, check if they are the payer
+      authorizers?.forEach((a) => {
+        if (a.address != payer?.address) {
+          // not paying, sign payload
+          payloadSigs.push(a);
+        }
+      });
+      // proposer should sign the payload (ONLY IF they are NOT the payer)
+      if (proposer && proposer.address != payer?.address) payloadSigs.push(proposer);
+      // payer should sign the envelope
+      envelopeSigs.push(payer);
+
       this.work.push({
         type: FlowWorkType.TRANSACTION,
         script: Buffer.from(script, 'utf-8'),
         arguments: arg,
+        proposer: prop,
+        payer: payer ? payer.address : svcBuf,
+        authorizers: authorizers,
+        payload_signatures: payloadSigs,
+        envelope_signatures: envelopeSigs,
         callback: cb,
       });
     });
   }
-  async create_account(newAccountKeys?: Array<AddKey | string>): Promise<any> {
+  async create_account(newAccountKeys?: Array<AddKey | string>): Promise<TransactionResultResponse | Error> {
     return new Promise((p) => {
-      const cb = (err: Error, res: any) => {
+      const cb = (err: Error, res: TransactionResultResponse) => {
         if (err) p(err);
         p(res);
       };
@@ -576,10 +657,10 @@ export class Flow {
         type: FlowWorkType.TRANSACTION,
         script: Buffer.from(createAccountTemplate, 'utf-8'),
         arguments: [keys, new Map<string, string>()],
-        proposer: svcBuf,
         payer: svcBuf,
-        authorizers: [svcBuf],
+        authorizers: [{ address: svcBuf, privateKey: '', publicKey: '' }],
         payload_signatures: [],
+        envelope_signatures: [{ address: svcBuf, privateKey: '', publicKey: '' }],
         callback: cb,
       });
     });
@@ -658,6 +739,45 @@ class FlowWorker {
       });
     });
   }
+  poll(work: FlowWork, transaction: Buffer, p: Function, timeout?: number) {
+    const to = timeout ? timeout : 50;
+    this.client.getTransactionResult({ id: transaction }, (e: Error, tr: TransactionResultResponse) => {
+      switch (tr.status) {
+        case 'UNKNOWN' || 'PENDING' || 'FINALIZED' || 'EXECUTED':
+          setTimeout(() => {
+            this.poll(work, transaction, p, to + 200); // automatic backoff
+          }, to);
+          break;
+        case 'SEALED':
+          processEvents(tr);
+          work.callback(e, tr);
+          this.status = FlowWorkerStatus.IDLE;
+          p(); // resolve promise
+          break;
+
+        default:
+          this.dbg(tr);
+          work.callback(Error('Unknown error occurred while polling transaction, maybe it expired?'));
+          return Promise.reject(Error('Unknown error occurred while polling transaction, maybe it expired?'));
+      }
+    });
+  }
+  getAccount(address: string | Buffer): Promise<Account> {
+    return new Promise((p) => {
+      if (typeof address == 'string') address = Buffer.from(address, 'hex');
+      this.client.getAccountAtLatestBlock({ address }, (err: any, res: any) => {
+        p(res['account']);
+      });
+    });
+  }
+  getLatestBlock(): Promise<Block> {
+    return new Promise((p) => {
+      this.client.getLatestBlock({ is_sealed: false }, (err: Error, res: any) => {
+        if (err) return Promise.reject(err);
+        p(res['block']);
+      });
+    });
+  }
   process(work: FlowWork): Promise<void> {
     this.status = FlowWorkerStatus.PROCESSING;
     return new Promise(async (p) => {
@@ -667,11 +787,10 @@ class FlowWorker {
         case FlowWorkType.GetAccountAtLatestBlock:
           if (work.arguments.length == 1) {
             const bufArg = Buffer.from(work.arguments[0].toString().replace(/\b0x/g, ''), 'hex');
-            this.client.getAccountAtLatestBlock({ address: bufArg }, (err: any, res: any) => {
-              work.callback(err, res);
-              this.status = FlowWorkerStatus.IDLE;
-              p();
-            });
+            const acct = await this.getAccount(bufArg);
+            work.callback(null, acct);
+            this.status = FlowWorkerStatus.IDLE;
+            p();
           } else {
             work.callback(Error('incorrect number of arguments'));
             this.status = FlowWorkerStatus.IDLE;
@@ -719,52 +838,75 @@ class FlowWorker {
           break;
 
         case FlowWorkType.TRANSACTION:
-          if (!work.proposer) return Promise.reject(Error('Transaction must have a proposer'));
-          if (!work.payer) return Promise.reject(Error('Transaction must have a payer'));
-          this.client.getLatestBlock({ is_sealed: work.arguments[0] }, (err: any, block: any) => {
-            if (err) p(err);
-            this.client.getAccountAtLatestBlock({ address: work.proposer }, (err: any, proposer: any) => {
-              if (err) p(err);
-              this.client.getAccountAtLatestBlock({ address: work.payer }, (err: any, payer: any) => {
-                if (err) p(err);
-                // args
-                const args = argBuilder(work.arguments);
-                // build
-                const mapR = proposer['account'].keys.map((x: AccountKey) => {
-                  if (x.public_key.toString('hex') == this.pubKey.replace(/\b0x/g, '')) return [x.id, x.sequence_number];
-                })[0];
-                const propKey: TransactionProposalKey = {
-                  address: proposer['account'].address,
-                  key_id: mapR[0],
-                  sequence_number: mapR[1],
-                };
-                let transaction: Transaction = {
-                  script: work.script ? work.script : Buffer.from('', 'utf-8'),
-                  arguments: args,
-                  reference_block_id: block['block'].id,
-                  gas_limit: 9999,
-                  proposal_key: propKey,
-                  payer: payer['account'].address,
-                  authorizers: <Array<Buffer>>work.authorizers,
-                  payload_signatures: [],
-                  envelope_signatures: [],
-                };
-                // sign
-                const sig: Sign = {
-                  address: payer['account'].address.toString('hex'),
-                  key_id: mapR[0],
-                  private_key: this.privKey,
-                };
-                transaction = signTransaction(transaction, [], [sig]);
-                // send
-                this.client.sendTransaction({ transaction: transaction }, (err: any, trans: any) => {
-                  work.callback(err, trans);
-                  this.status = FlowWorkerStatus.IDLE;
-                  this.dbg('Done with', FlowWorkType[work.type]);
-                  p();
-                });
-              });
+          if (!work.proposer || work.proposer?.privateKey == '') work.proposer = { address: work.payer ? work.payer : Buffer.alloc(0), privateKey: this.privKey, publicKey: this.pubKey };
+          if (!work.payer) work.payer = work.proposer.address;
+          // args
+          const tArgs = argBuilder(work.arguments);
+          const block = await this.getLatestBlock();
+          const proposer = await this.getAccount(work.proposer.address);
+          const payer = await this.getAccount(work.payer);
+          // build
+          const mapR = proposer.keys.map((x: AccountKey) => {
+            if (x.public_key.toString('hex') == work.proposer?.publicKey) return [x.id, x.sequence_number];
+          })[0];
+          if (!mapR || mapR.length == 0) return Promise.reject(Error('Invalid proposer'));
+          const propKey: TransactionProposalKey = {
+            address: proposer.address,
+            key_id: mapR[0],
+            sequence_number: mapR[1],
+          };
+          let transaction: Transaction = {
+            script: work.script ? work.script : Buffer.from('', 'utf-8'),
+            arguments: tArgs,
+            reference_block_id: block.id,
+            gas_limit: 9999,
+            proposal_key: propKey,
+            payer: payer.address,
+            authorizers: work.authorizers ? work.authorizers?.map((x) => x.address) : [payer.address],
+            payload_signatures: [],
+            envelope_signatures: [],
+          };
+          // sign
+          const finalPayload: Sign[] = [];
+          const finalEnvelope: Sign[] = [];
+          for (const ps of work.payload_signatures ? work.payload_signatures : []) {
+            if (finalPayload.filter((x) => x.address == ps.address.toString('hex')).length > 0) continue;
+            const acct = await this.getAccount(ps.address);
+            if (ps.publicKey == '') {
+              ps.publicKey = this.pubKey;
+              ps.privateKey = this.privKey;
+            }
+            finalPayload.push({
+              address: acct.address.toString('hex'),
+              key_id: acct.keys.filter((k) => k.public_key.toString('hex') == ps.publicKey)[0].id,
+              private_key: ps.privateKey,
             });
+          }
+          for (const ps of work.envelope_signatures ? work.envelope_signatures : []) {
+            if (finalEnvelope.filter((x) => x.address == ps.address.toString('hex')).length > 0) continue;
+            const acct = await this.getAccount(ps.address);
+            if (ps.publicKey == '') {
+              ps.publicKey = this.pubKey;
+              ps.privateKey = this.privKey;
+            }
+            finalEnvelope.push({
+              address: acct.address.toString('hex'),
+              key_id: acct.keys.filter((k) => k.public_key.toString('hex') == ps.publicKey)[0].id,
+              private_key: ps.privateKey,
+            });
+          }
+
+          if (finalEnvelope.length == 0 && finalPayload.length == 1) {
+            transaction = signTransaction(transaction, [], finalPayload);
+          } else {
+            transaction = signTransaction(transaction, finalPayload, finalEnvelope);
+          }
+          // send
+          this.client.sendTransaction({ transaction: transaction }, (err: any, trans: any) => {
+            // now poll for transaction completion
+            this.dbg(transaction);
+            if (err) return Promise.reject(err);
+            this.poll(work, trans.id, p);
           });
           break;
 

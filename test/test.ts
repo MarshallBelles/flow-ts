@@ -1,4 +1,4 @@
-import { Flow, FlowKey, FlowNetwork } from '../lib';
+import { Flow, FlowKey, FlowNetwork, Keys } from '../lib';
 import debug from 'debug';
 const debugLog = debug('Test');
 
@@ -9,6 +9,13 @@ const key0: FlowKey = {
 };
 const flow = new Flow(FlowNetwork.EMULATOR, '0xf8d6e0586b0a20c7', [key0], 5);
 
+let newTestAccount = '';
+let newTestAccount2 = '';
+const newTestKeys: Keys = {
+  private: 'e15abdfb61b936bc327db72d51279207263ec6630a56f30dbf3ecb56f58316e1',
+  public: 'f70d48c7b8fd06436a166bb3c9fd59be2b629d572a7ec01ea5389fd8a4cb7bad3922ef0313c484b0073b0a759ce4aa899371831670a2dc52848e441b29fda06d',
+};
+
 export const runTests = async () => {
   debugLog('Beginning Tests');
   await connectionTest();
@@ -16,6 +23,7 @@ export const runTests = async () => {
   await getAccountStressTest();
   await getBlockTest();
   await createAccountTest();
+  await executeTransactionTest();
   flow.stop();
 };
 
@@ -117,10 +125,75 @@ export const createAccountTest = async (): Promise<Boolean | Error> => {
     const dbg = debug('Test flow.create_account');
     dbg('Beginning Test');
     try {
-      // eslint-disable-next-line max-len
-      const newAccount = await flow.create_account(['259de136f61d61e8a2c803a31c9d3fd842d0fae513466fbf9a83389b30b812786724c4b43cc658403b4f433c571a3d131cc9c0c0890360c3012143c6fbf68df4']);
+      const newAccount = await flow.create_account([newTestKeys.public]);
       if (newAccount instanceof Error) return Promise.reject(newAccount);
-      dbg(newAccount);
+      newTestAccount = newAccount.events.filter((x) => x.type == 'flow.AccountCreated')[0].payload.value.fields[0].value.value;
+      dbg('Test Successful');
+      p(true);
+    } catch (error) {
+      dbg('Test failed');
+      p(Error(JSON.stringify(error)));
+    }
+  });
+};
+
+export const executeTransactionTest = async (): Promise<Boolean | Error> => {
+  const simpleTransaction = `
+    transaction(greeting: String) {
+
+      let guest: String
+    
+      prepare(authorizer: AuthAccount) {
+        self.guest = authorizer.address.toString()
+      }
+    
+      execute {
+        log(greeting.concat(",").concat(self.guest))
+      }
+    }
+  `;
+  const doubleAuthz = `
+  transaction(greeting: String, greeting2: String) {
+
+    let guest: String
+    let guest2: String
+  
+    prepare(authorizer: AuthAccount, authorizer2: AuthAccount) {
+      self.guest = authorizer.address.toString()
+      self.guest2 = authorizer2.address.toString()
+    }
+  
+    execute {
+      log(greeting.concat(",").concat(self.guest).concat(",").concat(greeting2).concat(",").concat(self.guest2))
+    }
+  }
+  `;
+  return await new Promise(async (p) => {
+    const dbg = debug('Test flow.execute_transaction');
+    dbg('Beginning Test');
+    try {
+      const newAccount = await flow.create_account([newTestKeys.public]);
+      if (newAccount instanceof Error) return Promise.reject(newAccount);
+      newTestAccount2 = newAccount.events.filter((x) => x.type == 'flow.AccountCreated')[0].payload.value.fields[0].value.value;
+      // test simple transaction, proposed and paid by the pre-defined service account
+      await flow.execute_transaction(simpleTransaction, ['hello']);
+      // test simple transaction, proposed and paid by the newTestAccount
+      const prop = {
+        address: Buffer.from(newTestAccount.replace(/\b0x/g, ''), 'hex'),
+        privateKey: newTestKeys.private,
+        publicKey: newTestKeys.public,
+      };
+      const prop2 = {
+        address: Buffer.from(newTestAccount2.replace(/\b0x/g, ''), 'hex'),
+        privateKey: newTestKeys.private,
+        publicKey: newTestKeys.public,
+      };
+      await flow.execute_transaction(simpleTransaction, ['world'], prop, prop, [prop]);
+      // test simple transaction proposed by the newTestAccount, paid by the serviceAccount
+      await flow.execute_transaction(simpleTransaction, ['world'], prop, undefined, [prop]);
+      // test double authorizer transaction
+      await flow.execute_transaction(doubleAuthz, ['hello', 'world'], prop, undefined, [prop, prop2]);
+
       dbg('Test Successful');
       p(true);
     } catch (error) {
