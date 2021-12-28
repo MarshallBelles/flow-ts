@@ -904,7 +904,6 @@ class FlowWorker {
           // send
           this.client.sendTransaction({ transaction: transaction }, (err: any, trans: any) => {
             // now poll for transaction completion
-            this.dbg(transaction);
             if (err) return Promise.reject(err);
             this.poll(work, trans.id, p);
           });
