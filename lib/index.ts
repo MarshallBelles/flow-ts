@@ -688,7 +688,7 @@ export class Flow {
   }
 
   async start(): Promise<void> {
-    this.dbg('Starting Flow.ts');
+    this.dbg('Starting Flow-ts');
     this.dbg('Access Node:', this.network);
     this.dbg('Private Keys:', this.privateKeys.length);
 
@@ -762,8 +762,6 @@ export class Flow {
     });
   }
   async execute_transaction(script: string, arg: any[], authorizers?: Array<Proposal>, proposer?: Proposal, payer?: Proposal): Promise<TransactionResultResponse | Error> {
-    this.dbg(proposer);
-
     return new Promise((p) => {
       if (!payer) payer = { address: Buffer.from(this.serviceAccountAddress, 'hex'), privateKey: '', publicKey: '' };
       const cb = (err: Error, res: any) => {
@@ -1207,7 +1205,6 @@ class FlowWorker {
             });
           }
           transaction = signTransaction(transaction, finalPayload, finalEnvelope);
-          this.dbg(transaction);
           this.client.sendTransaction({ transaction: transaction }, (err: any, trans: any) => {
             if (err) return Promise.reject(err);
             this.poll(work, trans.id, p);
