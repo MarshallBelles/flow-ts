@@ -1,13 +1,12 @@
 {
-  "name": "flow.ts",
-  "version": "1.0.0",
+  "name": "flow-ts",
+  "version": "0.0.1",
   "description": "Flow SDK for Node with TypeScript bindings",
   "main": "dist/lib/index.js",
   "types": "dist/lib/index.d.ts",
   "scripts": {
     "build": "tsc",
-    "test": "export DEBUG=* && npm run build && node dist/test/test.js",
-    "prepublish": "npm run test"
+    "test": "export DEBUG=* && npm run build && node dist/test/test.js"
   },
   "repository": {
     "type": "git",
