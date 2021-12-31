@@ -6,7 +6,8 @@
   "types": "dist/lib/index.d.ts",
   "scripts": {
     "build": "tsc",
-    "test": "export DEBUG=* && npm run build && node dist/test/test.js"
+    "test": "export DEBUG=* && npm run build && node dist/test/test.js",
+    "prepublish": "npm run build"
   },
   "repository": {
     "type": "git",
