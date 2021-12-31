@@ -509,13 +509,19 @@ const prepareEnvelope = (tx: TxEnvelope) => {
 };
 
 const preparePayloadSignatures = (tx: TxEnvelope) => {
-  return tx.payload_signatures.map((sig: Sig, i: number) => {
-    return [
-      i,
-      sig.keyId,
-      signatureBuffer(sig.sig),
-    ];
+  const sigs: any[] = [];
+  tx.authorizers.forEach((auth, i) => {
+    tx.payload_signatures.forEach((sig) => {
+      if (sig.address == auth) {
+        sigs.push([
+          i,
+          sig.keyId,
+          signatureBuffer(sig.sig),
+        ]);
+      }
+    });
   });
+  return sigs;
 };
 
 const TX_DOMAIN_TAG_HEX = rightPaddedHexBuffer(Buffer.from('FLOW-V0.0-transaction').toString('hex'), 32).toString('hex');

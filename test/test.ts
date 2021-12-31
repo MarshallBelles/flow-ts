@@ -121,6 +121,19 @@ export const executeTransactionTest = async (): Promise<Boolean | Error> => {
       }
     }
   `;
+  const moreArgs = `
+    transaction(greeting: String, intg: Int, float: Fix64) {
+
+      let guest: String
+      prepare(authorizer: AuthAccount) {
+        self.guest = authorizer.address.toString()
+      }
+    
+      execute {
+        log(greeting.concat(",").concat(self.guest).concat(intg.toString()).concat(float.toString()))
+      }
+    }
+  `;
   const doubleAuthz = `
     transaction(greeting: String, greeting2: String) {
 
@@ -161,19 +174,24 @@ export const executeTransactionTest = async (): Promise<Boolean | Error> => {
       if (tx0.status_code == 1) return Promise.reject(Error(tx0.error_message));
 
       dbg('test simple transaction authorized and proposed by the newTestAccount, paid by the service account');
-      const tx1 = await flow.execute_transaction(simpleTransaction, ['world'], [prop], prop);
+      const tx1 = await flow.execute_transaction(simpleTransaction, ['hello'], [prop], prop);
       if (tx1 instanceof Error) return Promise.reject(tx1);
       if (tx1.status_code == 1) return Promise.reject(Error(tx1.error_message));
 
       dbg('test simple transaction, proposed and paid by the newTestAccount');
-      const tx2 = await flow.execute_transaction(simpleTransaction, ['world'], [prop], prop, prop);
+      const tx2 = await flow.execute_transaction(simpleTransaction, ['hello'], [prop], prop, prop);
       if (tx2 instanceof Error) return Promise.reject(tx2);
       if (tx2.status_code == 1) return Promise.reject(Error(tx2.error_message));
 
-      dbg('test double authorizer transaction paid by newTestAccount');
-      const tx4 = await flow.execute_transaction(doubleAuthz, ['hello', 'world'], [prop2, prop], prop, prop);
+      dbg('test multiple arguments');
+      const tx4 = await flow.execute_transaction(moreArgs, ['hello', 42, 123.4567]);
       if (tx4 instanceof Error) return Promise.reject(tx4);
       if (tx4.status_code == 1) return Promise.reject(Error(tx4.error_message));
+
+      dbg('test double authorizer transaction paid by the service account');
+      const tx5 = await flow.execute_transaction(doubleAuthz, ['hello', 'world'], [prop2, prop]);
+      if (tx5 instanceof Error) return Promise.reject(tx5);
+      if (tx5.status_code == 1) return Promise.reject(Error(tx5.error_message));
 
       dbg('Test Successful');
       p(true);
