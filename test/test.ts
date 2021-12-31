@@ -10,25 +10,34 @@ const key0: FlowKey = {
 const flow = new Flow(FlowNetwork.EMULATOR, '0xf8d6e0586b0a20c7', [key0], 5);
 
 let newTestAccount = '';
-// let newTestAccount2 = '';
+let newTestAccount2 = '';
 const newTestKeys: Keys = {
   private: 'e15abdfb61b936bc327db72d51279207263ec6630a56f30dbf3ecb56f58316e1',
   public: 'f70d48c7b8fd06436a166bb3c9fd59be2b629d572a7ec01ea5389fd8a4cb7bad3922ef0313c484b0073b0a759ce4aa899371831670a2dc52848e441b29fda06d',
 };
+const newTestKeys2: Keys = {
+  private: '93ad4acf63a80183bc6d95e846bfdb12a103f9607c8705a040795bccacecce17',
+  public: '62a80713b0e2d63cdc13d8010eb6e55ad6ed5f8f3ff83c78b6faa1b94d204591276d92fe3cdc116000f3038dec4fc9d5396b8852724591530178fb5b84c9128a',
+};
 
 export const runTests = async () => {
   debugLog('Beginning Tests');
-  await connectionTest();
-  await getAccountTest();
-  await getBlockTest();
-  await createAccountTest();
-  await executeTransactionTest();
-  await deployContractTest();
-  await updateContractTest();
-  await removeContractTest();
-  await addKeyTest();
-  await removeKeyTest();
-  flow.stop();
+  try {
+    await connectionTest();
+    await getAccountTest();
+    await getBlockTest();
+    await createAccountTest();
+    await executeTransactionTest();
+    await deployContractTest();
+    await updateContractTest();
+    await removeContractTest();
+    await addKeyTest();
+    await removeKeyTest();
+    flow.stop();
+  } catch (error) {
+    flow.stop();
+    debugLog('Tests Failed');
+  }
 };
 
 export const connectionTest = async (): Promise<Boolean | Error> => {
@@ -103,7 +112,6 @@ export const executeTransactionTest = async (): Promise<Boolean | Error> => {
     transaction(greeting: String) {
 
       let guest: String
-    
       prepare(authorizer: AuthAccount) {
         self.guest = authorizer.address.toString()
       }
@@ -113,45 +121,59 @@ export const executeTransactionTest = async (): Promise<Boolean | Error> => {
       }
     }
   `;
-  /* const doubleAuthz = `
-  transaction(greeting: String, greeting2: String) {
+  const doubleAuthz = `
+    transaction(greeting: String, greeting2: String) {
 
-    let guest: String
-    let guest2: String
-    prepare(authorizer: AuthAccount, authorizer2: AuthAccount) {
-      self.guest = authorizer.address.toString()
-      self.guest2 = authorizer2.address.toString()
+      let guest: String
+      let guest2: String
+      prepare(authorizer: AuthAccount, authorizer2: AuthAccount) {
+        self.guest = authorizer.address.toString()
+        self.guest2 = authorizer2.address.toString()
+      }
+      execute {
+        log(greeting.concat(",").concat(self.guest).concat(",").concat(greeting2).concat(",").concat(self.guest2))
+      }
     }
-    execute {
-      log(greeting.concat(",").concat(self.guest).concat(",").concat(greeting2).concat(",").concat(self.guest2))
-    }
-  }
-  `; */
+  `;
   return await new Promise(async (p) => {
     const dbg = debug('Test flow.execute_transaction');
     dbg('Beginning Test');
     try {
-      const newAccount = await flow.create_account([newTestKeys.public]);
+      const newAccount = await flow.create_account([newTestKeys2.public]);
       if (newAccount instanceof Error) return Promise.reject(newAccount);
-      newTestAccount = newAccount.events.filter((x) => x.type == 'flow.AccountCreated')[0].payload.value.fields[0].value.value;
-      // test simple transaction, proposed and paid by the pre-defined service account
-      await flow.execute_transaction(simpleTransaction, ['hello']);
-      // test simple transaction, proposed and paid by the newTestAccount
+      newTestAccount2 = newAccount.events.filter((x) => x.type == 'flow.AccountCreated')[0].payload.value.fields[0].value.value;
+
       const prop = {
         address: Buffer.from(newTestAccount.replace(/\b0x/g, ''), 'hex'),
         privateKey: newTestKeys.private,
         publicKey: newTestKeys.public,
       };
-      /* const prop2 = {
+
+      const prop2 = {
         address: Buffer.from(newTestAccount2.replace(/\b0x/g, ''), 'hex'),
-        privateKey: newTestKeys.private,
-        publicKey: newTestKeys.public,
-      }; */
-      await flow.execute_transaction(simpleTransaction, ['world'], prop, prop, [prop]);
-      // test simple transaction proposed by the newTestAccount, paid by the serviceAccount
-      await flow.execute_transaction(simpleTransaction, ['world'], prop, undefined, [prop]);
-      // test double authorizer transaction
-      // await flow.execute_transaction(doubleAuthz, ['hello', 'world'], prop, undefined, [prop, prop2]);
+        privateKey: newTestKeys2.private,
+        publicKey: newTestKeys2.public,
+      };
+
+      dbg('test simple transaction, authorized, proposed, and paid by the service account');
+      const tx0 = await flow.execute_transaction(simpleTransaction, ['hello']);
+      if (tx0 instanceof Error) return Promise.reject(tx0);
+      if (tx0.status_code == 1) return Promise.reject(Error(tx0.error_message));
+
+      dbg('test simple transaction authorized and proposed by the newTestAccount, paid by the service account');
+      const tx1 = await flow.execute_transaction(simpleTransaction, ['world'], [prop], prop);
+      if (tx1 instanceof Error) return Promise.reject(tx1);
+      if (tx1.status_code == 1) return Promise.reject(Error(tx1.error_message));
+
+      dbg('test simple transaction, proposed and paid by the newTestAccount');
+      const tx2 = await flow.execute_transaction(simpleTransaction, ['world'], [prop], prop, prop);
+      if (tx2 instanceof Error) return Promise.reject(tx2);
+      if (tx2.status_code == 1) return Promise.reject(Error(tx2.error_message));
+
+      dbg('test double authorizer transaction paid by newTestAccount');
+      const tx4 = await flow.execute_transaction(doubleAuthz, ['hello', 'world'], [prop2, prop], prop, prop);
+      if (tx4 instanceof Error) return Promise.reject(tx4);
+      if (tx4.status_code == 1) return Promise.reject(Error(tx4.error_message));
 
       dbg('Test Successful');
       p(true);
