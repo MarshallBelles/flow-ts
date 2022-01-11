@@ -305,7 +305,7 @@ export interface TransactionProposalKey {
   sequence_number: number;
 }
 
-interface Proposal {
+export interface Proposal {
   address: Buffer;
   privateKey: string;
   publicKey: string;
@@ -730,7 +730,7 @@ export class Flow {
     return new Promise((p) => {
       const cb = (err: Error, res: any) => {
         if (err) p(err);
-        p(res['account']);
+        p(res);
       };
       if (typeof blockHeight == 'number') {
         this.work.push({
@@ -1072,10 +1072,10 @@ class FlowWorker {
       }
     });
   }
-  getAccount(address: string | Buffer): Promise<Account> {
+  getAccount(address: Buffer): Promise<Account> {
     return new Promise((p) => {
-      if (typeof address == 'string') address = Buffer.from(address, 'hex');
       this.client.getAccountAtLatestBlock({ address }, (err: any, res: any) => {
+        if (err) return Promise.reject(err);
         p(res['account']);
       });
     });
