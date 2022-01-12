@@ -209,6 +209,10 @@ export interface TransactionResultResponse {
   events: Array<Event>;
 }
 
+export interface TransactionQueuedResponse {
+  id: Buffer;
+}
+
 export interface Event {
   type: string;
   transaction_id: Buffer;
@@ -355,6 +359,7 @@ interface FlowWork {
   payer?: Buffer;
   payload_signatures?: Array<Proposal>;
   envelope_signatures?: Array<Proposal>;
+  resolve?: Boolean;
 }
 
 interface TxPayload {
@@ -761,6 +766,43 @@ export class Flow {
       });
     });
   }
+  async send_transaction(script: string, arg: any[], authorizers?: Array<Proposal>, proposer?: Proposal, payer?: Proposal): Promise<TransactionQueuedResponse | Error> {
+    return new Promise((p) => {
+      if (!payer) payer = { address: Buffer.from(this.serviceAccountAddress, 'hex'), privateKey: '', publicKey: '' };
+      const cb = (err: Error, res: any) => {
+        if (err) p(err);
+        p(res);
+      };
+
+      if (!proposer) proposer = payer;
+
+      if (!authorizers) authorizers = [proposer];
+      if (authorizers.length == 0) authorizers = [proposer];
+
+      const payloadSigs: Proposal[] = [];
+      const envelopeSigs: Proposal[] = [];
+      authorizers.forEach((a) => {
+        if (a.address != payer?.address) {
+          payloadSigs.push(a);
+        }
+      });
+      if (proposer && proposer.address != payer?.address) payloadSigs.push(proposer);
+      envelopeSigs.push(payer);
+
+      this.work.push({
+        type: FlowWorkType.TRANSACTION,
+        script: Buffer.from(script, 'utf-8'),
+        arguments: arg,
+        proposer: proposer,
+        payer: payer.address,
+        authorizers: authorizers,
+        payload_signatures: payloadSigs,
+        envelope_signatures: envelopeSigs,
+        callback: cb,
+        resolve: false,
+      });
+    });
+  }
   async execute_transaction(script: string, arg: any[], authorizers?: Array<Proposal>, proposer?: Proposal, payer?: Proposal): Promise<TransactionResultResponse | Error> {
     return new Promise((p) => {
       if (!payer) payer = { address: Buffer.from(this.serviceAccountAddress, 'hex'), privateKey: '', publicKey: '' };
@@ -794,6 +836,7 @@ export class Flow {
         payload_signatures: payloadSigs,
         envelope_signatures: envelopeSigs,
         callback: cb,
+        resolve: true,
       });
     });
   }
@@ -841,6 +884,7 @@ export class Flow {
         payload_signatures: [],
         envelope_signatures: [prop],
         callback: cb,
+        resolve: true,
       });
     });
   }
@@ -867,6 +911,7 @@ export class Flow {
         payload_signatures: [],
         envelope_signatures: [account],
         callback: cb,
+        resolve: true,
       });
     });
   }
@@ -894,6 +939,7 @@ export class Flow {
         payload_signatures: [],
         envelope_signatures: [account],
         callback: cb,
+        resolve: true,
       });
     });
   }
@@ -920,6 +966,7 @@ export class Flow {
         payload_signatures: [],
         envelope_signatures: [account],
         callback: cb,
+        resolve: true,
       });
     });
   }
@@ -946,6 +993,7 @@ export class Flow {
         payload_signatures: [],
         envelope_signatures: [account],
         callback: cb,
+        resolve: true,
       });
     });
   }
@@ -972,6 +1020,7 @@ export class Flow {
         payload_signatures: [],
         envelope_signatures: [account],
         callback: cb,
+        resolve: true,
       });
     });
   }
@@ -1207,7 +1256,13 @@ class FlowWorker {
           transaction = signTransaction(transaction, finalPayload, finalEnvelope);
           this.client.sendTransaction({ transaction: transaction }, (err: any, trans: any) => {
             if (err) return Promise.reject(err);
-            this.poll(work, trans.id, p);
+            if (work.resolve) {
+              this.poll(work, trans.id, p);
+            } else {
+              work.callback({ id: trans.id });
+              this.status = FlowWorkerStatus.IDLE;
+              p();
+            }
           });
           break;
 

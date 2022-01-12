@@ -187,6 +187,60 @@ describe('ContractTesting', () => {
     if (tx1.status_code != 0) return Promise.reject(Error(tx1.error_message));
     expect(tx1.events.length).toBe(4);
   });
+  it('send_transaction should work', async () => {
+    // mint 2 NFTs
+    const metadataForNFT1 = {
+      ID: 1, // this is our R3V ID, not the NFT UUID
+      DROP: 1, // this is the R3V Drop ID
+      ARTISTS: 'Various Artists', // artist names (Multiple = 5+, Various = 20+)
+      VENUE: 'NA', // venue name
+      EVENT: 'NOT REAL', // the event
+      DATE: '1638921600', // epoch timestamp, no milliseconds
+      IPFS: 'QmUSxtU3h27vfbnSNOTREALkb3PvxD9XVVJjfRnJ5HFJ45', // the IPFS hash for the video file (always .mp4)
+    };
+
+    const metadataForNFT2 = {
+      ID: 2, // this is our R3V ID, not the NFT UUID
+      DROP: 1, // this is the R3V Drop ID
+      ARTISTS: 'Various Artists', // artist names (Multiple = 5+, Various = 20+)
+      VENUE: 'NA', // venue name
+      EVENT: 'NOT REAL', // the event
+      DATE: '1638921600', // epoch timestamp, no milliseconds
+      IPFS: 'QmUSxtU3h27vfbnSELhK2xTkb3PvxNOTREALjfRnJ5HFJ45', // the IPFS hash for the video file (always .mp4)
+    };
+    const metadata1 = await new Promise<Buffer>((p) => gzip(Buffer.from(JSON.stringify(metadataForNFT1)), (e, b) => p(b)));
+    const metadata2 = await new Promise<Buffer>((p) => gzip(Buffer.from(JSON.stringify(metadataForNFT2)), (e, b) => p(b)));
+
+    const transaction = `
+      import NFTS from 0x${svc.address.toString('hex')}
+
+      transaction(metadata: [String]) {
+
+          let receiverRef: &{NFTS.NFTReceiver}
+          let minterRef: &NFTS.NFTMinter
+
+          prepare(acct: AuthAccount) {
+              self.receiverRef = acct.getCapability<&{NFTS.NFTReceiver}>(/public/NFTReceiver)
+                  .borrow()
+                  ?? panic("Could not borrow receiver reference")
+              self.minterRef = acct.borrow<&NFTS.NFTMinter>(from: /storage/NFTMinter)
+                  ?? panic("Could not borrow minter reference")
+          }
+
+          execute {
+              var i: Int = 0;
+              while i < metadata.length {
+                  let newNFT <- self.minterRef.mintNFT(metadata: metadata[i])
+                  self.receiverRef.deposit(token: <-newNFT)
+                  i = i + 1
+              }
+          }
+      }
+    `;
+    const tx1 = await flow.send_transaction(transaction, [[metadata1, metadata2]]);
+    if (tx1 instanceof Error) return Promise.reject(tx1);
+    expect(tx1.id).toBeTruthy();
+  });
   it('update_contract should work', async () => {
     const contract = `
     // this contract has an updated comment
