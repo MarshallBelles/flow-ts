@@ -1073,7 +1073,7 @@ class FlowWorker {
     this.status = FlowWorkerStatus.CONNECTING;
     debugLog('Worker registered');
     debugLog('Loading Protobufs');
-    const packageDefinition = protoLoader.loadSync('flow.proto', {
+    const packageDefinition = protoLoader.loadSync('./flow.proto', {
       keepCase: true,
       longs: String,
       enums: String,
