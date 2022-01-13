@@ -203,6 +203,7 @@ export const toBuffer = (v: any) => {
 const debugLog: debug.IDebugger = debug(`functions`);
 
 export interface TransactionResultResponse {
+  id: Buffer;
   status: string;
   status_code: number;
   error_message: string;
@@ -229,7 +230,7 @@ export interface EventPayload {
       name: string;
       value: {
         type: string;
-        value: any
+        value: any;
       }
     }>;
   }
@@ -1052,6 +1053,20 @@ export class Flow {
       }
     });
   }
+  async get_transaction_result(transaction: Buffer): Promise<TransactionResultResponse | Error> {
+    return new Promise((p) => {
+      const cb = (err: Error, res: TransactionResultResponse) => {
+        if (err) p(err);
+        res.id = transaction;
+        p(res);
+      };
+      this.work.push({
+        type: FlowWorkType.GetTransactionResult,
+        arguments: [transaction],
+        callback: cb,
+      });
+    });
+  }
 }
 
 class FlowWorker {
@@ -1109,6 +1124,7 @@ class FlowWorker {
           break;
         case 'SEALED':
           processEvents(tr);
+          tr.id = transaction;
           work.callback(e, tr);
           this.status = FlowWorkerStatus.IDLE;
           p(); // resolve promise
@@ -1190,6 +1206,14 @@ class FlowWorker {
         case FlowWorkType.SCRIPT:
           const args = argBuilder(work.arguments);
           this.client.executeScriptAtLatestBlock({ script: work.script, arguments: args }, (err: any, res: any) => {
+            work.callback(err, res);
+            this.status = FlowWorkerStatus.IDLE;
+            p();
+          });
+          break;
+
+        case FlowWorkType.GetTransactionResult:
+          this.client.getTransactionResult({ id: work.arguments[0] }, (err: any, res: any) => {
             work.callback(err, res);
             this.status = FlowWorkerStatus.IDLE;
             p();

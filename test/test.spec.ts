@@ -2,13 +2,14 @@
 import 'jest';
 import { Flow, FlowKey, FlowNetwork, Proposal } from '../lib';
 import { exec, ChildProcess } from 'child_process';
-import { gzip, gunzip } from 'zlib';
+import { gzip } from 'zlib';
 
 describe('ContractTesting', () => {
   let flow: Flow;
   let svc: Proposal;
   let usr1: Proposal;
   let emulator: ChildProcess;
+  const transactions: Buffer[] = [];
 
   beforeAll(async () => {
     // start emulator
@@ -240,6 +241,12 @@ describe('ContractTesting', () => {
     const tx1 = await flow.send_transaction(transaction, [[metadata1, metadata2]]);
     if (tx1 instanceof Error) return Promise.reject(tx1);
     expect(tx1.id).toBeTruthy();
+    transactions.push(tx1.id);
+  });
+  it('get_transaction_result should work', async () => {
+    const txRes = await flow.get_transaction_result(transactions[0]);
+    if (txRes instanceof Error) return Promise.reject(txRes);
+    expect(txRes.id).toBeTruthy();
   });
   it('update_contract should work', async () => {
     const contract = `
