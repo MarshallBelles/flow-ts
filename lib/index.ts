@@ -889,7 +889,7 @@ export class Flow {
       });
     });
   }
-  async add_contract(contractName: string, contract: string, account: Proposal): Promise<TransactionResultResponse | Error> {
+  async add_contract(contractName: string, contract: string, account?: Proposal): Promise<TransactionResultResponse | Error> {
     return new Promise((p) => {
       const cb = (err: Error, res: any) => {
         if (err) p(err);
@@ -902,6 +902,7 @@ export class Flow {
           }
         }
       `;
+      if (!account) account = { address: Buffer.from(this.serviceAccountAddress, 'hex'), privateKey: '', publicKey: '' };
       this.work.push({
         type: FlowWorkType.TRANSACTION,
         script: Buffer.from(addContractTemplate, 'utf-8'),
@@ -916,7 +917,7 @@ export class Flow {
       });
     });
   }
-  async add_key(key: AddKey, account: Proposal): Promise<TransactionResultResponse | Error> {
+  async add_key(key: AddKey, account?: Proposal): Promise<TransactionResultResponse | Error> {
     return new Promise((p) => {
       const cb = (err: Error, res: any) => {
         if (err) p(err);
@@ -929,6 +930,7 @@ export class Flow {
             }
         }
       `;
+      if (!account) account = { address: Buffer.from(this.serviceAccountAddress, 'hex'), privateKey: '', publicKey: '' };
       const pubKey = encodePublicKeyForFlow(key);
       this.work.push({
         type: FlowWorkType.TRANSACTION,
@@ -944,7 +946,7 @@ export class Flow {
       });
     });
   }
-  async remove_key(keyIndex: number, account: Proposal): Promise<TransactionResultResponse | Error> {
+  async remove_key(keyIndex: number, account?: Proposal): Promise<TransactionResultResponse | Error> {
     return new Promise((p) => {
       const cb = (err: Error, res: any) => {
         if (err) p(err);
@@ -957,6 +959,7 @@ export class Flow {
             }
         }
       `;
+      if (!account) account = { address: Buffer.from(this.serviceAccountAddress, 'hex'), privateKey: '', publicKey: '' };
       this.work.push({
         type: FlowWorkType.TRANSACTION,
         script: Buffer.from(addKeyTemplate, 'utf-8'),
@@ -971,7 +974,7 @@ export class Flow {
       });
     });
   }
-  async update_contract(contractName: string, contract: string, account: Proposal): Promise<TransactionResultResponse | Error> {
+  async update_contract(contractName: string, contract: string, account?: Proposal): Promise<TransactionResultResponse | Error> {
     return new Promise((p) => {
       const cb = (err: Error, res: any) => {
         if (err) p(err);
@@ -984,6 +987,7 @@ export class Flow {
           }
         }
       `;
+      if (!account) account = { address: Buffer.from(this.serviceAccountAddress, 'hex'), privateKey: '', publicKey: '' };
       this.work.push({
         type: FlowWorkType.TRANSACTION,
         script: Buffer.from(updateContractTemplate, 'utf-8'),
@@ -998,7 +1002,7 @@ export class Flow {
       });
     });
   }
-  async remove_contract(contractName: string, account: Proposal): Promise<TransactionResultResponse | Error> {
+  async remove_contract(contractName: string, account?: Proposal): Promise<TransactionResultResponse | Error> {
     return new Promise((p) => {
       const cb = (err: Error, res: any) => {
         if (err) p(err);
@@ -1011,6 +1015,7 @@ export class Flow {
           }
         }
       `;
+      if (!account) account = { address: Buffer.from(this.serviceAccountAddress, 'hex'), privateKey: '', publicKey: '' };
       this.work.push({
         type: FlowWorkType.TRANSACTION,
         script: Buffer.from(updateContractTemplate, 'utf-8'),

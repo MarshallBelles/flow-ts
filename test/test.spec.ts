@@ -129,9 +129,12 @@ describe('ContractTesting', () => {
       }
     `;
 
-    const txRes = await flow.add_contract('NFTS', contract, svc);
+    const txRes = await flow.add_contract('NFTS', contract, usr1); // should deploy to usr1
     if (txRes instanceof Error) return Promise.reject(txRes);
     expect(txRes.events.length).toBeGreaterThan(0);
+    const tx2Res = await flow.add_contract('NFTS', contract); // should deploy to svc
+    if (tx2Res instanceof Error) return Promise.reject(tx2Res);
+    expect(tx2Res.events.length).toBeGreaterThan(0);
   });
   it('execute_transaction should work', async () => {
     // mint 2 NFTs
@@ -316,23 +319,35 @@ describe('ContractTesting', () => {
       }
     `;
 
-    const txRes = await flow.update_contract('NFTS', contract, svc);
+    const txRes = await flow.update_contract('NFTS', contract, usr1);
     if (txRes instanceof Error) return Promise.reject(txRes);
     expect(txRes.events.length).toBeGreaterThan(0);
+    const tx2Res = await flow.update_contract('NFTS', contract);
+    if (tx2Res instanceof Error) return Promise.reject(tx2Res);
+    expect(tx2Res.events.length).toBeGreaterThan(0);
   });
   it('remove_contract should work', async () => {
-    const txRes = await flow.remove_contract('NFTS', svc);
+    const txRes = await flow.remove_contract('NFTS', usr1);
     if (txRes instanceof Error) return Promise.reject(txRes);
     expect(txRes.events.length).toBeGreaterThan(0);
+    const tx2Res = await flow.remove_contract('NFTS');
+    if (tx2Res instanceof Error) return Promise.reject(tx2Res);
+    expect(tx2Res.events.length).toBeGreaterThan(0);
   });
   it('add_key should work', async () => {
-    const txRes = await flow.add_key({ public: '54cfa0f49e1364255eb5ac6b3b5a6fd5a23cf9a786c39640a5a0ccd9d257c85d1de75d0f928ad504af4a9791e9d1b9ed4faae0149b0ffb75094cbea4c23fc1f1', weight: 1000 }, svc);
+    const txRes = await flow.add_key({ public: '54cfa0f49e1364255eb5ac6b3b5a6fd5a23cf9a786c39640a5a0ccd9d257c85d1de75d0f928ad504af4a9791e9d1b9ed4faae0149b0ffb75094cbea4c23fc1f1', weight: 1000 }, usr1);
     if (txRes instanceof Error) return Promise.reject(txRes);
     expect(txRes.events.length).toBeGreaterThan(0);
+    const tx2Res = await flow.add_key({ public: '54cfa0f49e1364255eb5ac6b3b5a6fd5a23cf9a786c39640a5a0ccd9d257c85d1de75d0f928ad504af4a9791e9d1b9ed4faae0149b0ffb75094cbea4c23fc1f1', weight: 1000 });
+    if (tx2Res instanceof Error) return Promise.reject(tx2Res);
+    expect(tx2Res.events.length).toBeGreaterThan(0);
   });
   it('remove_key should work', async () => {
-    const txRes = await flow.remove_key(1, svc);
+    const txRes = await flow.remove_key(1, usr1);
     if (txRes instanceof Error) return Promise.reject(txRes);
     expect(txRes.events.length).toBeGreaterThan(0);
+    const tx2Res = await flow.remove_key(1);
+    if (tx2Res instanceof Error) return Promise.reject(tx2Res);
+    expect(tx2Res.events.length).toBeGreaterThan(0);
   });
 });
