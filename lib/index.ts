@@ -1398,24 +1398,30 @@ class FlowWorker {
         work.callback(e);
         p();
       } else {
-        switch (tr.status) {
-          case 'UNKNOWN' || 'PENDING' || 'FINALIZED' || 'EXECUTED':
-            setTimeout(() => {
-              this.poll(work, transaction, p, to + 200); // automatic backoff
-            }, to);
-            break;
-          case 'SEALED':
-            processEvents(tr);
-            tr.id = transaction;
-            work.callback(e, tr);
-            this.status = FlowWorkerStatus.IDLE;
-            p(); // resolve promise
-            break;
+        if (!tr.status) {
+          work.callback(e, tr);
+          this.status = FlowWorkerStatus.IDLE;
+          p();
+        } else {
+          switch (tr.status) {
+            case 'UNKNOWN' || 'PENDING' || 'FINALIZED' || 'EXECUTED':
+              setTimeout(() => {
+                this.poll(work, transaction, p, to + 200); // automatic backoff
+              }, to);
+              break;
+            case 'SEALED':
+              processEvents(tr);
+              tr.id = transaction;
+              work.callback(e, tr);
+              this.status = FlowWorkerStatus.IDLE;
+              p(); // resolve promise
+              break;
 
-          default:
-            this.dbg(tr);
-            work.callback(Error('Unknown error occurred while polling transaction, maybe it expired?'));
-            return Promise.reject(Error('Unknown error occurred while polling transaction, maybe it expired?'));
+            default:
+              work.callback(e, tr);
+              this.status = FlowWorkerStatus.IDLE;
+              p();
+          }
         }
       }
     });
