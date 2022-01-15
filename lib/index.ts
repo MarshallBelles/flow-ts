@@ -1545,13 +1545,18 @@ class FlowWorker {
             envelope_signatures: [],
           };
           transaction = signTransaction(transaction, <AccountKey[]>work.payload_signatures, <AccountKey[]>work.envelope_signatures);
-          this.client.sendTransaction({ transaction: transaction }, (err: Error, trans: any) => {
+          this.client.sendTransaction({ transaction: transaction }, async (err: Error, trans: any) => {
             if (err) {
               work.callback(err);
               this.status = FlowWorkerStatus.IDLE;
               p();
             } else {
               if (work.resolve) {
+                await new Promise<void>((p) => {
+                  setTimeout(() => {
+                    p();
+                  }, 200);
+                });
                 this.poll(work, trans.id, p);
               } else {
                 work.callback({ id: trans.id });
