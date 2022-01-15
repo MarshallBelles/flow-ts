@@ -1,13 +1,13 @@
 /* eslint-disable indent */
 import 'jest';
-import { Flow, FlowKey, FlowNetwork, Proposal } from '../lib';
+import { Flow, AccountKey, FlowNetwork } from '../lib';
 import { exec, ChildProcess } from 'child_process';
 import { gzip } from 'zlib';
 
 describe('ContractTesting', () => {
   let flow: Flow;
-  let svc: Proposal;
-  let usr1: Proposal;
+  let svc: AccountKey;
+  let usr1: AccountKey;
   let emulator: ChildProcess;
   const transactions: Buffer[] = [];
 
@@ -16,29 +16,29 @@ describe('ContractTesting', () => {
     emulator = exec('flow emulator');
     // wait 1 second
     await new Promise<void>((p) => setTimeout(p, 1000));
-    const key0: FlowKey = {
-      keyID: 0,
-      private: 'ec8cd232a763fb481711a0f9ce7d1241c7bc3865689afb31e6b213d781642ea7',
-      public: '81c12390330fdbb55340911b812b50ce7795eefe5478bc5659429f41bdf83d8b6b50f9acc730b9cae67dc29e594ade93cac33f085f07275b8d45331a754497dd',
-    };
     svc = {
-      address: Buffer.from('f8d6e0586b0a20c7', 'hex'),
-      privateKey: 'ec8cd232a763fb481711a0f9ce7d1241c7bc3865689afb31e6b213d781642ea7',
-      publicKey: '81c12390330fdbb55340911b812b50ce7795eefe5478bc5659429f41bdf83d8b6b50f9acc730b9cae67dc29e594ade93cac33f085f07275b8d45331a754497dd',
+      id: 0,
+      address: 'f8d6e0586b0a20c7',
+      private_key: Buffer.from('ec8cd232a763fb481711a0f9ce7d1241c7bc3865689afb31e6b213d781642ea7', 'hex'),
+      public_key: Buffer.from('81c12390330fdbb55340911b812b50ce7795eefe5478bc5659429f41bdf83d8b6b50f9acc730b9cae67dc29e594ade93cac33f085f07275b8d45331a754497dd', 'hex'),
+      hash_algo: 3,
+      sign_algo: 2,
+      weight: 1000,
     };
     // connect to emulator
-    flow = new Flow(FlowNetwork.EMULATOR, '0xf8d6e0586b0a20c7', [key0], 5);
+    flow = new Flow(FlowNetwork.EMULATOR, '0xf8d6e0586b0a20c7', [svc], 5);
     await flow.start();
     // create usr1 and usr2 accounts for testing
-    const acct1 = await flow.create_account(['54cfa0f49e1364255eb5ac6b3b5a6fd5a23cf9a786c39640a5a0ccd9d257c85d1de75d0f928ad504af4a9791e9d1b9ed4faae0149b0ffb75094cbea4c23fc1f1']);
-    if (acct1 instanceof Error) return Promise.reject(acct1);
     usr1 = {
-      address: Buffer.from(acct1.events.filter((x) => x.type == 'flow.AccountCreated')[0].payload.value.fields[0].value.value.replace(/\b0x/g, ''), 'hex'),
-      privateKey: 'ac4fdb02a932bc4a0cae0987258316727ede1973f784b91260f5bfeccfebb900',
-      publicKey: '54cfa0f49e1364255eb5ac6b3b5a6fd5a23cf9a786c39640a5a0ccd9d257c85d1de75d0f928ad504af4a9791e9d1b9ed4faae0149b0ffb75094cbea4c23fc1f1',
+      private_key: Buffer.from('ac4fdb02a932bc4a0cae0987258316727ede1973f784b91260f5bfeccfebb900', 'hex'),
+      public_key: Buffer.from('54cfa0f49e1364255eb5ac6b3b5a6fd5a23cf9a786c39640a5a0ccd9d257c85d1de75d0f928ad504af4a9791e9d1b9ed4faae0149b0ffb75094cbea4c23fc1f1', 'hex'),
+      hash_algo: 3,
+      sign_algo: 2,
+      weight: 1000,
     };
-    const acct2 = await flow.create_account(['fd8e43b88a5042e9dce0c5d0d0014455ec5dd512efed92a104381e21592baf23c171a82a7b5c2714d4e05af12a2c95ba052ab1b54c265451f3ae8b0cec370c2b']);
-    if (acct2 instanceof Error) return Promise.reject(acct2);
+    const acct1 = await flow.create_account([usr1]);
+    if (acct1 instanceof Error) return Promise.reject(acct1);
+    usr1.address = acct1.events.filter((x) => x.type == 'flow.AccountCreated')[0].payload.value.fields[0].value.value.replace(/\b0x/g, '');
   });
 
   afterAll(() => {
@@ -48,9 +48,9 @@ describe('ContractTesting', () => {
   });
 
   it('get_account should work', async () => {
-    const account = await flow.get_account(usr1.address.toString('hex'));
+    const account = await flow.get_account(<string>usr1.address);
     if (account instanceof Error) return Promise.reject(account);
-    expect(account.address.toString('hex')).toBe(usr1.address.toString('hex'));
+    expect(account.address.toString('hex')).toBe(<string>usr1.address);
   });
   it('get_block should work', async () => {
     const block = await flow.get_block();
@@ -58,7 +58,7 @@ describe('ContractTesting', () => {
     expect(block.height).toBeTruthy();
   });
   it('create_account should work', async () => {
-    const newAcctTx = await flow.create_account(['54cfa0f49e1364255eb5ac6b3b5a6fd5a23cf9a786c39640a5a0ccd9d257c85d1de75d0f928ad504af4a9791e9d1b9ed4faae0149b0ffb75094cbea4c23fc1f1']);
+    const newAcctTx = await flow.create_account([usr1]); // use same key as usr1
     if (newAcctTx instanceof Error) return Promise.reject(newAcctTx);
     expect(newAcctTx.events.filter((x) => x.type === 'flow.AccountCreated').length).toBe(1);
   });
@@ -161,7 +161,7 @@ describe('ContractTesting', () => {
     const metadata2 = await new Promise<Buffer>((p) => gzip(Buffer.from(JSON.stringify(metadataForNFT2)), (e, b) => p(b)));
 
     const transaction = `
-      import NFTS from 0x${svc.address.toString('hex')}
+      import NFTS from 0x${svc.address}
 
       transaction(metadata: [String]) {
 
@@ -216,7 +216,7 @@ describe('ContractTesting', () => {
     const metadata2 = await new Promise<Buffer>((p) => gzip(Buffer.from(JSON.stringify(metadataForNFT2)), (e, b) => p(b)));
 
     const transaction = `
-      import NFTS from 0x${svc.address.toString('hex')}
+      import NFTS from 0x${svc.address}
 
       transaction(metadata: [String]) {
 
@@ -335,10 +335,10 @@ describe('ContractTesting', () => {
     expect(tx2Res.events.length).toBeGreaterThan(0);
   });
   it('add_key should work', async () => {
-    const txRes = await flow.add_key({ public: '54cfa0f49e1364255eb5ac6b3b5a6fd5a23cf9a786c39640a5a0ccd9d257c85d1de75d0f928ad504af4a9791e9d1b9ed4faae0149b0ffb75094cbea4c23fc1f1', weight: 1000 }, usr1);
+    const txRes = await flow.add_key({ public_key: Buffer.from('54cfa0f49e1364255eb5ac6b3b5a6fd5a23cf9a786c39640a5a0ccd9d257c85d1de75d0f928ad504af4a9791e9d1b9ed4faae0149b0ffb75094cbea4c23fc1f1', 'hex'), weight: 1000, sign_algo: 2, hash_algo: 3 }, usr1);
     if (txRes instanceof Error) return Promise.reject(txRes);
     expect(txRes.events.length).toBeGreaterThan(0);
-    const tx2Res = await flow.add_key({ public: '54cfa0f49e1364255eb5ac6b3b5a6fd5a23cf9a786c39640a5a0ccd9d257c85d1de75d0f928ad504af4a9791e9d1b9ed4faae0149b0ffb75094cbea4c23fc1f1', weight: 1000 });
+    const tx2Res = await flow.add_key({ public_key: Buffer.from('54cfa0f49e1364255eb5ac6b3b5a6fd5a23cf9a786c39640a5a0ccd9d257c85d1de75d0f928ad504af4a9791e9d1b9ed4faae0149b0ffb75094cbea4c23fc1f1', 'hex'), weight: 1000, sign_algo: 2, hash_algo: 3 });
     if (tx2Res instanceof Error) return Promise.reject(tx2Res);
     expect(tx2Res.events.length).toBeGreaterThan(0);
   });
