@@ -1398,36 +1398,47 @@ class FlowWorker {
         work.callback(e);
         p();
       } else {
-        if (!tr.status) {
-          if (to > 2000) {
-            work.callback(e, tr);
+        switch (tr.status) {
+          case 'UNKNOWN':
+            setTimeout(() => {
+              this.poll(work, transaction, p, to + 200); // automatic backoff
+            }, to);
+            break;
+          case 'PENDING':
+            setTimeout(() => {
+              this.poll(work, transaction, p, to + 200); // automatic backoff
+            }, to);
+            break;
+          case 'FINALIZED':
+            setTimeout(() => {
+              this.poll(work, transaction, p, to + 200); // automatic backoff
+            }, to);
+            break;
+          case 'EXECUTED':
+            setTimeout(() => {
+              this.poll(work, transaction, p, to + 200); // automatic backoff
+            }, to);
+            break;
+          case 'SEALED':
+            processEvents(tr);
+            tr.id = transaction;
+            work.callback(e, { ...tr, id: transaction.toString('hex') });
             this.status = FlowWorkerStatus.IDLE;
             p(); // resolve promise
-          } else {
-            setTimeout(() => {
-              this.poll(work, transaction, p, to + 200);
-            }, to);
-          }
-        } else {
-          switch (tr.status) {
-            case 'UNKNOWN' || 'PENDING' || 'FINALIZED' || 'EXECUTED':
-              setTimeout(() => {
-                this.poll(work, transaction, p, to + 200); // automatic backoff
-              }, to);
-              break;
-            case 'SEALED':
-              processEvents(tr);
-              tr.id = transaction;
-              work.callback(e, tr);
-              this.status = FlowWorkerStatus.IDLE;
-              p(); // resolve promise
-              break;
+            break;
+          case 'EXPIRED':
+            processEvents(tr);
+            tr.id = transaction;
+            work.callback(e, { ...tr, id: transaction.toString('hex') });
+            this.status = FlowWorkerStatus.IDLE;
+            p(); // resolve promise
+            break;
 
-            default:
-              work.callback(e, tr);
-              this.status = FlowWorkerStatus.IDLE;
-              p();
-          }
+          default:
+            setTimeout(() => {
+              this.poll(work, transaction, p, to + 200); // automatic backoff
+            }, to);
+            break;
         }
       }
     });
@@ -1560,7 +1571,7 @@ class FlowWorker {
               if (work.resolve) {
                 this.poll(work, trans.id, p);
               } else {
-                work.callback({ id: trans.id });
+                work.callback(null, { id: trans.id });
                 this.status = FlowWorkerStatus.IDLE;
                 p();
               }
