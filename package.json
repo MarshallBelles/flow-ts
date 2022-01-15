@@ -1,6 +1,6 @@
 {
   "name": "@marshallbelles/flow-ts",
-  "version": "2.1.5",
+  "version": "2.1.6",
   "description": "Flow SDK for Node with TypeScript bindings",
   "main": "dist/lib/index.js",
   "types": "dist/lib/index.d.ts",

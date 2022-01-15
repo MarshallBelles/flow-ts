@@ -865,7 +865,6 @@ const preparePayloadSignatures = (tx: TxEnvelope) => {
       }
     });
   });
-  console.log('sigs', sigs.map((x) => x[2].toString('hex')));
   return sigs;
 };
 
@@ -902,9 +901,6 @@ const encodePublicKeyForFlow = (a: AccountKey) => encode([
 ]).toString('hex');
 
 const signTransaction = (transaction: Transaction, payloadSignatures: AccountKey[], envelopeSignatures: AccountKey[]): Transaction => {
-  console.log(transaction);
-  console.log(payloadSignatures);
-  console.log(envelopeSignatures);
   const tr = transaction;
   const payloadSigs: Signature[] = [];
   payloadSignatures.forEach((ps) => {
