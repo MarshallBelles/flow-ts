@@ -865,6 +865,7 @@ const preparePayloadSignatures = (tx: TxEnvelope) => {
       }
     });
   });
+  console.log('sigs', sigs.map((x) => x[2].toString('hex')));
   return sigs;
 };
 
@@ -901,6 +902,9 @@ const encodePublicKeyForFlow = (a: AccountKey) => encode([
 ]).toString('hex');
 
 const signTransaction = (transaction: Transaction, payloadSignatures: AccountKey[], envelopeSignatures: AccountKey[]): Transaction => {
+  console.log(transaction);
+  console.log(payloadSignatures);
+  console.log(envelopeSignatures);
   const tr = transaction;
   const payloadSigs: Signature[] = [];
   payloadSignatures.forEach((ps) => {
@@ -1064,11 +1068,11 @@ export class Flow {
         p(res);
       };
 
-      if (!proposer) proposer = payer;
-
-      if (!authorizers) authorizers = [<AccountKey>proposer];
-
-      if (authorizers.length == 0) authorizers = [<AccountKey>proposer];
+      if (!payer) payer = { address: this.serviceAccountAddress };
+      if (!authorizers) authorizers = [payer];
+      if (authorizers.length == 0) authorizers = [payer];
+      if (!proposer) proposer = authorizers[0];
+      if (authorizers[0] != proposer) proposer = authorizers[0];
 
       const payloadSigs: AccountKey[] = [];
       const envelopeSigs: AccountKey[] = [];
@@ -1077,9 +1081,7 @@ export class Flow {
           payloadSigs.push(a);
         }
       });
-      if (proposer && proposer.address != payer?.address) payloadSigs.push(proposer);
       envelopeSigs.push(<AccountKey>payer);
-
       this.work.push({
         type: FlowWorkType.TRANSACTION,
         script: Buffer.from(script, 'utf-8'),
@@ -1096,16 +1098,16 @@ export class Flow {
   }
   async execute_transaction(script: string, arg: any[], authorizers?: Array<AccountKey>, proposer?: AccountKey, payer?: AccountKey): Promise<TransactionResultResponse | Error> {
     return new Promise((p) => {
-      if (!payer) payer = { address: this.serviceAccountAddress };
       const cb = (err: Error, res: any) => {
         if (err) p(err);
         p(res);
       };
 
-      if (!proposer) proposer = payer;
-
-      if (!authorizers) authorizers = [proposer];
-      if (authorizers.length == 0) authorizers = [proposer];
+      if (!payer) payer = { address: this.serviceAccountAddress };
+      if (!authorizers) authorizers = [payer];
+      if (authorizers.length == 0) authorizers = [payer];
+      if (!proposer) proposer = authorizers[0];
+      if (authorizers[0] != proposer) proposer = authorizers[0];
 
       const payloadSigs: AccountKey[] = [];
       const envelopeSigs: AccountKey[] = [];
@@ -1114,9 +1116,7 @@ export class Flow {
           payloadSigs.push(a);
         }
       });
-      if (proposer && proposer.address != payer?.address) payloadSigs.push(proposer);
       envelopeSigs.push(payer);
-
       this.work.push({
         type: FlowWorkType.TRANSACTION,
         script: Buffer.from(script, 'utf-8'),

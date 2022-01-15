@@ -8,6 +8,7 @@ describe('ContractTesting', () => {
   let flow: Flow;
   let svc: AccountKey;
   let usr1: AccountKey;
+  let usr2: AccountKey;
   let emulator: ChildProcess;
   const transactions: Buffer[] = [];
 
@@ -30,6 +31,7 @@ describe('ContractTesting', () => {
     await flow.start();
     // create usr1 and usr2 accounts for testing
     usr1 = {
+      id: 0,
       private_key: Buffer.from('ac4fdb02a932bc4a0cae0987258316727ede1973f784b91260f5bfeccfebb900', 'hex'),
       public_key: Buffer.from('54cfa0f49e1364255eb5ac6b3b5a6fd5a23cf9a786c39640a5a0ccd9d257c85d1de75d0f928ad504af4a9791e9d1b9ed4faae0149b0ffb75094cbea4c23fc1f1', 'hex'),
       hash_algo: 3,
@@ -39,6 +41,17 @@ describe('ContractTesting', () => {
     const acct1 = await flow.create_account([usr1]);
     if (acct1 instanceof Error) return Promise.reject(acct1);
     usr1.address = acct1.events.filter((x) => x.type == 'flow.AccountCreated')[0].payload.value.fields[0].value.value.replace(/\b0x/g, '');
+    usr2 = {
+      id: 0,
+      private_key: Buffer.from('ac4fdb02a932bc4a0cae0987258316727ede1973f784b91260f5bfeccfebb900', 'hex'),
+      public_key: Buffer.from('54cfa0f49e1364255eb5ac6b3b5a6fd5a23cf9a786c39640a5a0ccd9d257c85d1de75d0f928ad504af4a9791e9d1b9ed4faae0149b0ffb75094cbea4c23fc1f1', 'hex'),
+      hash_algo: 3,
+      sign_algo: 2,
+      weight: 1000,
+    };
+    const acct2 = await flow.create_account([usr2]);
+    if (acct2 instanceof Error) return Promise.reject(acct2);
+    usr2.address = acct2.events.filter((x) => x.type == 'flow.AccountCreated')[0].payload.value.fields[0].value.value.replace(/\b0x/g, '');
   });
 
   afterAll(() => {
@@ -52,16 +65,19 @@ describe('ContractTesting', () => {
     if (account instanceof Error) return Promise.reject(account);
     expect(account.address.toString('hex')).toBe(<string>usr1.address);
   });
+
   it('get_block should work', async () => {
     const block = await flow.get_block();
     if (block instanceof Error) return Promise.reject(block);
     expect(block.height).toBeTruthy();
   });
+
   it('create_account should work', async () => {
     const newAcctTx = await flow.create_account([usr1]); // use same key as usr1
     if (newAcctTx instanceof Error) return Promise.reject(newAcctTx);
     expect(newAcctTx.events.filter((x) => x.type === 'flow.AccountCreated').length).toBe(1);
   });
+
   it('add_contract should work', async () => {
     const contract = `
       pub contract NFTS {
@@ -136,6 +152,7 @@ describe('ContractTesting', () => {
     if (tx2Res instanceof Error) return Promise.reject(tx2Res);
     expect(tx2Res.events.length).toBeGreaterThan(0);
   });
+
   it('execute_transaction should work', async () => {
     // mint 2 NFTs
     const metadataForNFT1 = {
@@ -191,6 +208,7 @@ describe('ContractTesting', () => {
     if (tx1.status_code != 0) return Promise.reject(Error(tx1.error_message));
     expect(tx1.events.length).toBe(4);
   });
+
   it('send_transaction should work', async () => {
     // mint 2 NFTs
     const metadataForNFT1 = {
@@ -246,11 +264,13 @@ describe('ContractTesting', () => {
     expect(tx1.id).toBeTruthy();
     transactions.push(tx1.id);
   });
+
   it('get_transaction_result should work', async () => {
     const txRes = await flow.get_transaction_result(transactions[0]);
     if (txRes instanceof Error) return Promise.reject(txRes);
     expect(txRes.id).toBeTruthy();
   });
+
   it('update_contract should work', async () => {
     const contract = `
     // this contract has an updated comment
@@ -326,6 +346,24 @@ describe('ContractTesting', () => {
     if (tx2Res instanceof Error) return Promise.reject(tx2Res);
     expect(tx2Res.events.length).toBeGreaterThan(0);
   });
+
+  it('specific authorizers should work', async () => {
+    expect(flow).toBeInstanceOf(Flow);
+    const transaction: string = `
+        import NFTS from 0x${svc.address}
+        transaction {
+          prepare(acct: AuthAccount) {
+            let collection <- NFTS.createEmptyCollection()
+            acct.save<@NFTS.Collection>(<-collection, to: /storage/NFTCollection)
+            acct.link<&{NFTS.NFTReceiver}>(/public/NFTReceiver, target: /storage/NFTCollection)
+          }
+        }
+      `;
+    const txRes = await flow.execute_transaction(transaction, [], [usr2], usr2);
+    if (txRes instanceof Error) return Promise.reject(txRes);
+    if (txRes.status_code != 0) return Promise.reject(Error(txRes.error_message));
+  });
+
   it('remove_contract should work', async () => {
     const txRes = await flow.remove_contract('NFTS', usr1);
     if (txRes instanceof Error) return Promise.reject(txRes);
@@ -334,6 +372,7 @@ describe('ContractTesting', () => {
     if (tx2Res instanceof Error) return Promise.reject(tx2Res);
     expect(tx2Res.events.length).toBeGreaterThan(0);
   });
+
   it('add_key should work', async () => {
     const txRes = await flow.add_key({ public_key: Buffer.from('54cfa0f49e1364255eb5ac6b3b5a6fd5a23cf9a786c39640a5a0ccd9d257c85d1de75d0f928ad504af4a9791e9d1b9ed4faae0149b0ffb75094cbea4c23fc1f1', 'hex'), weight: 1000, sign_algo: 2, hash_algo: 3 }, usr1);
     if (txRes instanceof Error) return Promise.reject(txRes);
@@ -342,6 +381,7 @@ describe('ContractTesting', () => {
     if (tx2Res instanceof Error) return Promise.reject(tx2Res);
     expect(tx2Res.events.length).toBeGreaterThan(0);
   });
+
   it('remove_key should work', async () => {
     const txRes = await flow.remove_key(1, usr1);
     if (txRes instanceof Error) return Promise.reject(txRes);
