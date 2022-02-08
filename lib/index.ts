@@ -1,5 +1,8 @@
 import { KeyManagementServiceClient } from '@google-cloud/kms';
+import { Account, API, Block, FlowRestClient } from '@marshallbelles/flow-rest';
 import * as crypto from 'crypto';
+
+export { API };
 
 export interface Config {
   api: API;
@@ -10,14 +13,10 @@ export interface Config {
   versionId: string;
 }
 
-export enum API {
-  LOCAL,
-  TESTNET,
-  MAINNET
-}
-
 export enum Digest {
+  // eslint-disable-next-line no-unused-vars
   sha256,
+  // eslint-disable-next-line no-unused-vars
   sha3_256
 }
 
@@ -25,28 +24,10 @@ export class FlowTs {
   private KMSClient: KeyManagementServiceClient;
   private versionName: string;
   private config: Config;
+  private RESTClient: FlowRestClient;
 
   constructor(config: Config, credentialsFile: string, KMSClientOverride?: KeyManagementServiceClient) {
     this.config = config;
-    let accessNodeAPI;
-    switch (config.api) {
-      case API.LOCAL:
-        accessNodeAPI = 'http://localhost:8080';
-        break;
-
-      case API.TESTNET:
-        accessNodeAPI = 'https://rest-testnet.onflow.org';
-        break;
-
-      case API.MAINNET:
-        accessNodeAPI = 'https://rest-testnet.onflow.org';
-        break;
-
-      default:
-        accessNodeAPI = 'https://rest-testnet.onflow.org';
-        break;
-    }
-
     this.KMSClient = KMSClientOverride ? KMSClientOverride : new KeyManagementServiceClient({ credentials_file: credentialsFile });
     this.versionName = this.KMSClient.cryptoKeyVersionPath(
         config.project_id,
@@ -55,6 +36,7 @@ export class FlowTs {
         config.keyId,
         config.versionId
     );
+    this.RESTClient = new FlowRestClient(config.api);
   }
   private async signMessage(msg: Buffer, dig?: Digest): Promise<Buffer> {
     // Create a digest of the message. The digest needs to match the digest
@@ -97,6 +79,21 @@ export class FlowTs {
 
     return Buffer.from(signResponse.signature);
   }
-  public async getAccount(account: string): Account {
+  public async getAccount(account: string): Promise<Account | Error> {
+    return await this.RESTClient.getAccount(account);
+  }
+  public async getBlock(id?: string, height?: number): Promise<Block[] | Error> {
+    if (id) {
+      // get by id
+      return await this.RESTClient.getBlock(id);
+    } else if (height) {
+      // get by height
+      return await this.RESTClient.getBlockHeight([height]);
+    } else {
+      // get latest
+      const latest = await this.RESTClient.getLatestBlock();
+      if (latest instanceof Error) return Promise.reject(latest);
+      return [latest];
+    }
   }
 }

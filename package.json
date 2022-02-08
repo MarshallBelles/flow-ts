@@ -30,6 +30,7 @@
   },
   "dependencies": {
     "@google-cloud/kms": "^2.10.0",
+    "@marshallbelles/flow-rest": "^1.0.1",
     "@types/jest": "^27.4.0",
     "debug": "^4.3.3",
     "fast-crc32c": "^2.0.0",
