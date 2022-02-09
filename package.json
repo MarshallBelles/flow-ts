@@ -1,6 +1,6 @@
 {
-  "name": "@marshallbelles/flow-ts",
-  "version": "3.0.0",
+  "name": "@marshallbelles/flow-kms",
+  "version": "1.0.0",
   "description": "FCL extension with TypeScript bindings and Google KMS integration",
   "main": "dist/lib/index.js",
   "types": "dist/lib/index.d.ts",

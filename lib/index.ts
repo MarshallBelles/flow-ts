@@ -38,24 +38,13 @@ export class FlowTs {
     );
     this.RESTClient = new FlowRestClient(config.api);
   }
-  private async signMessage(msg: Buffer, dig?: Digest): Promise<Buffer> {
+  private async signMessage(msg: Buffer): Promise<Buffer> {
     // Create a digest of the message. The digest needs to match the digest
     // configured for the Cloud KMS key.
 
-    let hash: crypto.Hash;
-    switch (dig) {
-      case Digest.sha256:
-        hash = crypto.createHash('sha256');
-        break;
+    // This library only supports KMS: Elliptic Curve P-256 - SHA256 Digest
 
-      case Digest.sha3_256:
-        hash = crypto.createHash('sha3-256');
-        break;
-
-      default:
-        hash = crypto.createHash('sha256');
-        break;
-    }
+    const hash = crypto.createHash('sha256');
 
     hash.update(msg);
     const digest = hash.digest();
