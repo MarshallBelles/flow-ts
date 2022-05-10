@@ -1,4 +1,4 @@
-import { addressBuffer, blockBuffer, rightPaddedHexBuffer, rlpEncode, scriptBuffer, signatureBuffer } from './encode';
+import { addressBuffer, blockBuffer, rlpEncode, scriptBuffer, signatureBuffer } from './encode';
 import { AccountKey, EventPayload, Transaction, TxEnvelope, TxPayload, Signature } from './models';
 import { ec as EC } from 'elliptic';
 import { SHA3 } from 'sha3';
@@ -6,6 +6,8 @@ import { SHA3 } from 'sha3';
 export const encodeTransactionPayload = (tx: TxPayload): string => rlpEncode(preparePayload(tx));
 
 export const encodeTransactionEnvelope = (tx: TxEnvelope): string => rlpEncode(prepareEnvelope(tx));
+
+const rightPaddedHexBuffer = (value: string, pad: number): Buffer => Buffer.from(value.padEnd(pad * 2, '0'), 'hex');
 
 export const signTransaction = (transaction: Transaction, payloadSignatures: AccountKey[], envelopeSignatures: AccountKey[]): Transaction => {
   const tr = transaction;

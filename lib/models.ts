@@ -69,15 +69,15 @@ export interface BlockSeal {
 }
 
 export interface AccountKey {
-    address?: string;
-    id?: number;
-    public_key?: Buffer,
+    address: string;
+    id: number;
+    public_key: Buffer,
     private_key?: Buffer,
-    sign_algo?: number;
-    hash_algo?: number;
-    weight?: number;
-    sequence_number?: number;
-    revoked?: Boolean;
+    sign_algo: number;
+    hash_algo: number;
+    weight: number;
+    sequence_number: number;
+    revoked: Boolean;
 }
 
 export interface Transaction {
@@ -109,12 +109,6 @@ export enum TransactionStatus {
     EXECUTED,
     SEALED,
     EXPIRED,
-}
-
-export enum FlowNetwork {
-    EMULATOR,
-    TESTNET,
-    MAINNET
 }
 
 export interface Signature {

@@ -1,10 +1,14 @@
-import { AccountKey } from './models';
+import { Flow } from '.';
+import { AccountKey, Transaction } from './models';
+import { argBuilder, signTransaction } from './signatures';
+
+export const leftPaddedHexBuffer = (value: string, pad: number): Buffer => Buffer.from(value.padStart(pad * 2, '0'), 'hex');
 
 export const encodePublicKeyForFlow = (a: AccountKey) => encode([
   a.public_key, // publicKey hex to binary
-    a.sign_algo ? a.sign_algo : 2, // only P256 is supported
-    a.hash_algo ? a.hash_algo : 3, // SHA3-256
-    a.weight ? a.weight : 1 > 0 ? a.weight : 1, // cannot be null or negative
+  a.sign_algo ? a.sign_algo : 2, // only P256 is supported
+  a.hash_algo ? a.hash_algo : 3, // SHA3-256
+  a.weight ? a.weight : 1 > 0 ? a.weight : 1, // cannot be null or negative
 ]).toString('hex');
 
 export const encode = (input: any) => {
@@ -202,10 +206,6 @@ export const toBuffer = (v: any) => {
   return v;
 };
 
-export const rightPaddedHexBuffer = (value: string, pad: number): Buffer => Buffer.from(value.padEnd(pad * 2, '0'), 'hex');
-
-export const leftPaddedHexBuffer = (value: string, pad: number): Buffer => Buffer.from(value.padStart(pad * 2, '0'), 'hex');
-
 export const addressBuffer = (addr: string) => leftPaddedHexBuffer(addr, 8);
 
 export const blockBuffer = (block: string) => leftPaddedHexBuffer(block, 32);
@@ -216,4 +216,32 @@ export const signatureBuffer = (signature: string) => Buffer.from(signature, 'he
 
 export const rlpEncode = (v: any): string => {
   return encode(v).toString('hex');
+};
+
+export const prepareSimpleTransaction = async (client: Flow, script: string | Buffer, args: any[], serviceAccount: AccountKey): Promise<Transaction | Error> => {
+  if (typeof (script) == 'string') {
+    script = Buffer.from(script, 'utf-8');
+  }
+  const svcAcct = await client.getAccount(Buffer.from(serviceAccount.address, 'hex'));
+  if (svcAcct instanceof Error) return svcAcct;
+  serviceAccount.sequence_number = svcAcct.keys.find((x) => x.id === serviceAccount.id)?.sequence_number!;
+  const block = await client.getLatestBlock(false);
+  if (block instanceof Error) return block;
+  const tx = {
+    script,
+    arguments: argBuilder(args),
+    reference_block_id: block.id,
+    gas_limit: 1000,
+    proposal_key: {
+      address: svcAcct.address,
+      key_id: serviceAccount.id,
+      sequence_number: serviceAccount.sequence_number,
+    },
+    payer: svcAcct.address,
+    authorizers: [svcAcct.address],
+    payload_signatures: [],
+    envelope_signatures: [],
+  };
+  signTransaction(tx, [], [serviceAccount]);
+  return tx;
 };
